@@ -558,6 +558,8 @@ body,
   flex-direction: column;
   gap: 0.48rem;
   padding: 0.8rem 0.9rem;
+  content-visibility: auto;
+  contain-intrinsic-size: 0 116px;
   border-radius: 10px;
   background: rgba(15, 23, 42, 0.82);
   border: 1px solid var(--border-subtle);
