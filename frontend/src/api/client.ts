@@ -13,14 +13,16 @@ import {
 import { getRepresentativeCoord } from '../utils/categories';
 import { FALLBACK_ARTICLES_BY_EVENT, FALLBACK_EVENTS, FALLBACK_HEALTH } from './fallbackData';
 
-const DEFAULT_API_BASE_URL = 'http://localhost:8000/api/v1';
+const DEFAULT_API_BASE_URL = 'http://127.0.0.1:8000/api/v1';
 
 export function getApiBaseUrl(): string {
   const envUrl =
     typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_BASE_URL
       ? String(import.meta.env.VITE_API_BASE_URL).trim()
       : '';
-  return (envUrl || DEFAULT_API_BASE_URL).replace(/\/+$/, '');
+  return (envUrl || DEFAULT_API_BASE_URL)
+    .replace('://localhost:8000', '://127.0.0.1:8000')
+    .replace(/\/+$/, '');
 }
 
 function normalizeGeometry(rawGeom: unknown): GeoJsonGeometry {

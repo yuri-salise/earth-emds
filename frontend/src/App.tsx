@@ -4,6 +4,7 @@ import {
   fetchEventDetail,
   fetchEvents,
   fetchHealthStatus,
+  filterEventsClientSide,
 } from './api/client';
 import { FALLBACK_EVENTS, FALLBACK_HEALTH } from './api/fallbackData';
 import { EventDetailDrawer } from './components/EventDetailDrawer';
@@ -41,28 +42,44 @@ export const App: React.FC = () => {
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => soundFx.isEnabled());
   const [showDisclaimersModal, setShowDisclaimersModal] = useState<boolean>(false);
 
+  const allEventsRef = React.useRef<HazardEvent[]>(FALLBACK_EVENTS);
+  const hasInitialLoadedRef = React.useRef<boolean>(false);
+
   const loadEventsAndHealth = useCallback(
     async (activeFilters: EventFilters, isManualSync = false) => {
       if (isManualSync) {
         setIsSyncing(true);
-      } else {
+      } else if (!hasInitialLoadedRef.current) {
         setIsLoadingEvents(true);
+      } else {
+        // Instant <1ms optimistic client-side filter from cached dataset while server query runs
+        setEvents(filterEventsClientSide(allEventsRef.current, activeFilters));
       }
 
       try {
-        const [eventsRes, healthRes] = await Promise.all([
-          fetchEvents(activeFilters),
-          fetchHealthStatus(),
-        ]);
-        setEvents(eventsRes.items);
-        setLastUpdatedAt(eventsRes.last_updated_at || healthRes.last_updated_at);
-        setHealth({
-          ...healthRes,
-          cache_freshness:
-            eventsRes.cache_freshness === 'cached_fallback'
-              ? 'cached_fallback'
-              : healthRes.cache_freshness,
-        });
+        if (!hasInitialLoadedRef.current || isManualSync) {
+          const [eventsRes, healthRes] = await Promise.all([
+            fetchEvents(INITIAL_FILTERS),
+            fetchHealthStatus(),
+          ]);
+          allEventsRef.current = eventsRes.items;
+          hasInitialLoadedRef.current = true;
+          setEvents(filterEventsClientSide(eventsRes.items, activeFilters));
+          setLastUpdatedAt(eventsRes.last_updated_at || healthRes.last_updated_at);
+          setHealth({
+            ...healthRes,
+            cache_freshness:
+              eventsRes.cache_freshness === 'cached_fallback'
+                ? 'cached_fallback'
+                : healthRes.cache_freshness,
+          });
+        } else {
+          const eventsRes = await fetchEvents(activeFilters);
+          setEvents(eventsRes.items);
+          if (eventsRes.last_updated_at) {
+            setLastUpdatedAt(eventsRes.last_updated_at);
+          }
+        }
       } finally {
         setIsLoadingEvents(false);
         setIsSyncing(false);
