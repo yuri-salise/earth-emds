@@ -488,6 +488,16 @@ class Database:
     def seed_initial_data(self) -> None:
         """Seed Natural Earth Admin 0 boundaries, country profiles, and curated EONET events."""
         started = datetime.now(timezone.utc).isoformat()
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                """
+                DELETE FROM article
+                WHERE original_url LIKE '%reuters.com/world/%-satellite-report%'
+                   OR original_url LIKE '%apnews.com/article/%'
+                   OR original_url LIKE '%earthobservatory.nasa.gov/IOTD/%'
+                   OR original_url LIKE '%example.org/%'
+                """
+            )
         self.seed_boundaries_and_profiles()
         seed_events = get_seed_eonet_events()
         for ev in seed_events:
@@ -547,9 +557,10 @@ class Database:
                     )
         self.log_sync_run("rest_countries", rc_started, "success", len(profiles))
 
-        # Enrich top open events with NewsAPI if live key is configured
+        # Enrich top open events with NewsAPI / RSS if online
         news_started = datetime.now(timezone.utc).isoformat()
         news_count = 0
+        now_iso = datetime.now(timezone.utc).isoformat()
         for ev in events[:5]:
             res = await fetch_event_news(
                 event_id=ev["id"],
@@ -560,6 +571,9 @@ class Database:
                 quota_tracker=self.quota_tracker,
                 force_offline=force_offline,
             )
+            if res["articles"]:
+                with self._lock, self._connect() as conn:
+                    self._upsert_scored_articles_in_tx(conn, ev["id"], res["articles"], now_iso)
             news_count += len(res["articles"])
         self.log_sync_run("newsapi", news_started, "success", news_count)
         self.last_sync_at = datetime.now(timezone.utc).isoformat()
@@ -857,6 +871,65 @@ class Database:
                 """,
                 (event_id,),
             ).fetchall()
+
+            has_legacy_dead_url = any(
+                "-satellite-report" in (r["original_url"] or "")
+                or "apnews.com/article/" in (r["original_url"] or "")
+                or "earthobservatory.nasa.gov/IOTD/" in (r["original_url"] or "")
+                or "example.org/" in (r["original_url"] or "")
+                for r in rows
+            )
+
+            if not rows or has_legacy_dead_url:
+                ev_row = conn.execute(
+                    "SELECT id, title, category, latest_observed_at FROM event WHERE id = ?",
+                    (event_id,),
+                ).fetchone()
+                if ev_row:
+                    c_rows = conn.execute(
+                        """
+                        SELECT cp.name
+                        FROM event_country ec
+                        JOIN country_profile cp ON ec.iso_a3 = cp.iso_a3
+                        WHERE ec.event_id = ? AND ec.iso_a3 <> '-99'
+                        ORDER BY ec.match_method ASC, cp.name ASC
+                        """,
+                        (event_id,),
+                    ).fetchall()
+                    country_names = [cr["name"] for cr in c_rows]
+                    obs_dates = [ev_row["latest_observed_at"]]
+                    conn.execute("DELETE FROM article_match WHERE event_id = ?", (event_id,))
+                    curated = _build_curated_fallback_articles(
+                        event_id=ev_row["id"],
+                        event_title=ev_row["title"],
+                        event_category=ev_row["category"],
+                        country_names=country_names,
+                        event_dates=obs_dates,
+                    )
+                    scored = score_and_rank_articles(
+                        articles=curated,
+                        event_title=ev_row["title"],
+                        event_category=ev_row["category"],
+                        country_names=country_names,
+                        event_dates=obs_dates,
+                        min_score=25,
+                    )
+                    now_iso = datetime.now(timezone.utc).isoformat()
+                    self._upsert_scored_articles_in_tx(conn, event_id, scored, now_iso)
+                    rows = conn.execute(
+                        """
+                        SELECT
+                            a.canonical_url, a.original_url, a.title, a.description,
+                            a.publisher, a.published_at, a.retrieved_at,
+                            am.score, am.confidence_label, am.match_reasons_json, am.algorithm_version
+                        FROM article_match am
+                        JOIN article a ON am.article_url = a.canonical_url
+                        WHERE am.event_id = ?
+                        ORDER BY am.score DESC, a.published_at DESC
+                        """,
+                        (event_id,),
+                    ).fetchall()
+
             return [
                 {
                     "canonical_url": r["canonical_url"],

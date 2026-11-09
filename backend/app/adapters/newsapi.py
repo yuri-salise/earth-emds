@@ -104,51 +104,64 @@ def _build_curated_fallback_articles(
     country_names: list[str] | None = None,
     event_dates: list[str] | None = None,
 ) -> list[dict]:
-    """Generate realistic, event-contextualized journalism items when keyless or offline."""
+    """Generate realistic, event-contextualized journalism items with live working URLs."""
     primary_country = (country_names[0] if country_names else "Global Region").strip()
     obs_date = (
         event_dates[-1]
         if event_dates
         else datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     )
-    slug = re.sub(r"[^a-z0-9]+", "-", event_title.lower()).strip("-")[:48] or event_id.lower()
 
     cat_lower = event_category.lower()
     if "volcano" in cat_lower:
         kw_noun = "volcano eruption and ash plume"
+        kw_short = "volcano eruption"
         agency = "Volcanology and Geological Hazard Observatory"
     elif "fire" in cat_lower:
         kw_noun = "wildfire containment and fire perimeter"
+        kw_short = "wildfire"
         agency = "National Wildfire Forestry Command"
     elif "storm" in cat_lower:
         kw_noun = "severe storm and typhoon track warning"
+        kw_short = "severe storm typhoon cyclone"
         agency = "Joint Meteorological & Cyclone Warning Center"
     elif "flood" in cat_lower:
         kw_noun = "flood inundation and river basin alert"
+        kw_short = "flooding"
         agency = "Hydrological & Flood Forecasting Bureau"
+    elif "quake" in cat_lower or "seismic" in cat_lower:
+        kw_noun = "earthquake seismic activity and fault tremor"
+        kw_short = "earthquake"
+        agency = "National Seismological Network"
     else:
         kw_noun = "sea ice drift and cryosphere observation"
+        kw_short = "sea ice iceberg"
         agency = "Satellite Earth Observation Center"
+
+    clean_title = re.sub(r"\bRx\b|\bSW\b|[0-9]{3,}", "", event_title).strip(" -_,") or event_title
+    gnews_query = quote_plus(f"{clean_title} {primary_country} {kw_short}".strip())
+    reliefweb_query = quote_plus(f"{primary_country} {kw_short}".strip())
+    nasa_query = quote_plus(f"{clean_title} {primary_country}".strip())
 
     return [
         {
-            "title": f"{event_title}: Satellite monitoring tracks {kw_noun} in {primary_country}",
+            "title": f"{event_title}: Live News & Satellite Dispatch for {kw_noun} in {primary_country}",
             "description": (
-                f"Scientific monitoring agencies in {primary_country} issued updated advisories "
+                f"Live aggregated news coverage and regional advisories in {primary_country} "
                 f"regarding {event_title} following satellite observations of {kw_noun}."
             ),
-            "url": f"https://reuters.com/world/{slug}-satellite-report?utm_source=newsapi",
-            "publisher": "Reuters Environment",
+            "url": f"https://news.google.com/search?q={gnews_query}&hl=en-US&gl=US&ceid=US:en&utm_source=newsapi",
+            "publisher": "Google News Dispatch",
             "published_at": obs_date,
         },
         {
             "title": f"Authorities in {primary_country} assess impact of {event_title}",
             "description": (
-                f"Regional response teams and the {agency} continue tracking {kw_noun} "
+                f"Regional response teams, UN OCHA ReliefWeb monitors, and the {agency} continue tracking {kw_noun} "
                 f"across affected sectors in {primary_country}."
             ),
-            "url": f"https://apnews.com/article/{slug}-{primary_country.lower().replace(' ', '-')}",
-            "publisher": "Associated Press",
+            "url": f"https://reliefweb.int/updates?search={reliefweb_query}",
+            "publisher": "UN OCHA ReliefWeb",
             "published_at": obs_date,
         },
         {
@@ -157,7 +170,7 @@ def _build_curated_fallback_articles(
                 f"Latest multi-spectral imagery highlights active {kw_noun} markers "
                 f"near {primary_country} during the current observation window."
             ),
-            "url": f"https://earthobservatory.nasa.gov/IOTD/{slug}",
+            "url": f"https://earthobservatory.nasa.gov/search?q={nasa_query}",
             "publisher": "NASA Earth Observatory",
             "published_at": obs_date,
         },
@@ -170,6 +183,7 @@ async def _fetch_google_news_rss(query: str) -> list[dict]:
     async with httpx.AsyncClient(
         timeout=httpx.Timeout(3.5, connect=2.0),
         headers={"User-Agent": "earth-emds/1.0"},
+        follow_redirects=True,
     ) as client:
         resp = await client.get(rss_url)
         resp.raise_for_status()
@@ -180,7 +194,11 @@ async def _fetch_google_news_rss(query: str) -> list[dict]:
             link = (item.findtext("link") or "").strip()
             desc = (item.findtext("description") or "").strip()
             source_el = item.find("source")
-            publisher = (source_el.text.strip() if source_el is not None and source_el.text else "Google News")
+            publisher = (
+                source_el.text.strip()
+                if source_el is not None and source_el.text
+                else "Google News"
+            )
             if title and link:
                 items.append(
                     {
@@ -259,9 +277,17 @@ async def fetch_event_news(
                         outcome = "success"
             except Exception as exc:
                 error_class = type(exc).__name__
+    elif not force_offline:
+        try:
+            rss_items = await _fetch_google_news_rss(search_query)
+            if rss_items:
+                candidates.extend(rss_items)
+                outcome = "success"
+        except Exception:
+            pass
 
-    # Always supplement with curated high-signal disaster journalism so every event
-    # has explainable scored articles even when NewsAPI key is placeholder or rate-limited
+    # Always supplement with curated high-signal disaster links so every event
+    # has explainable scored articles with working live URLs
     curated = _build_curated_fallback_articles(
         event_id=event_id,
         event_title=event_title,
