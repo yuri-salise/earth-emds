@@ -324,12 +324,14 @@ export const FALLBACK_EVENTS: HazardEvent[] = [
 export const FALLBACK_ARTICLES_BY_EVENT: Record<string, ScoredArticle[]> = {
   EONET_6401: [
     {
-      canonical_url: 'https://example.org/news/valparaiso-biobio-wildfire-chile-response',
-      original_url: 'https://example.org/news/valparaiso-biobio-wildfire-chile-response',
+      canonical_url:
+        'https://news.google.com/search?ceid=US:en&gl=US&hl=en-US&q=Valparaiso+Biobio+Forest+Wildfires+Chile',
+      original_url:
+        'https://news.google.com/search?q=Valparaiso+Biobio+Forest+Wildfires+Chile&hl=en-US&gl=US&ceid=US:en',
       title: 'Forestry Crews Mobilize Against Valparaíso & Biobío Forest Wildfires in Central Chile',
       description:
         'Satellite thermal observations from NASA FIRMS show active wildfire perimeters expanding across dry hillsides in Chile.',
-      publisher: 'Andes Science & Environment Dispatch',
+      publisher: 'Google News Dispatch',
       published_at: '2026-10-14T08:30:00Z',
       retrieved_at: '2026-10-14T11:30:00Z',
       score: 100,
@@ -343,12 +345,12 @@ export const FALLBACK_ARTICLES_BY_EVENT: Record<string, ScoredArticle[]> = {
       algorithm_version: 'v1',
     },
     {
-      canonical_url: 'https://example.org/news/chile-seasonal-fire-prevention-update',
-      original_url: 'https://example.org/news/chile-seasonal-fire-prevention-update',
+      canonical_url: 'https://reliefweb.int/updates?search=Chile+wildfire',
+      original_url: 'https://reliefweb.int/updates?search=Chile+wildfire',
       title: 'Chile Expands Aerial Water-Bombing Fleet Amid Spring Wildfire Conditions',
       description:
         'Regional forestry monitors in Central Chile report elevated temperatures and gusting coastal winds.',
-      publisher: 'Southern Cone Monitor',
+      publisher: 'UN OCHA ReliefWeb',
       published_at: '2026-10-13T16:10:00Z',
       retrieved_at: '2026-10-14T11:30:00Z',
       score: 65,
@@ -363,12 +365,14 @@ export const FALLBACK_ARTICLES_BY_EVENT: Record<string, ScoredArticle[]> = {
   ],
   EONET_6402: [
     {
-      canonical_url: 'https://example.org/news/super-typhoon-kristine-philippine-sea-track',
-      original_url: 'https://example.org/news/super-typhoon-kristine-philippine-sea-track',
+      canonical_url:
+        'https://news.google.com/search?ceid=US:en&gl=US&hl=en-US&q=Super+Typhoon+Kristine+Philippines+Taiwan',
+      original_url:
+        'https://news.google.com/search?q=Super+Typhoon+Kristine+Philippines+Taiwan&hl=en-US&gl=US&ceid=US:en',
       title: 'Super Typhoon Kristine Intensifies Over Philippine Sea as Coastal Monitors Track Path',
       description:
         'Meteorological agencies in the Philippines and Taiwan are closely monitoring storm trajectory and offshore swells.',
-      publisher: 'Asia-Pacific Weather Wire',
+      publisher: 'Google News Dispatch',
       published_at: '2026-10-14T07:45:00Z',
       retrieved_at: '2026-10-14T11:40:00Z',
       score: 100,
@@ -382,12 +386,12 @@ export const FALLBACK_ARTICLES_BY_EVENT: Record<string, ScoredArticle[]> = {
       algorithm_version: 'v1',
     },
     {
-      canonical_url: 'https://example.org/news/western-pacific-cyclone-shipping-advisory',
-      original_url: 'https://example.org/news/western-pacific-cyclone-shipping-advisory',
+      canonical_url: 'https://reliefweb.int/updates?search=Philippines+typhoon+cyclone',
+      original_url: 'https://reliefweb.int/updates?search=Philippines+typhoon+cyclone',
       title: 'Maritime Shipping Advisory Issued Across Luzon Strait for Tropical Cyclone Activity',
       description:
         'Vessels transiting between northern Luzon and southern Taiwan advised to monitor storm updates.',
-      publisher: 'Maritime Telemetry Daily',
+      publisher: 'UN OCHA ReliefWeb',
       published_at: '2026-10-13T19:00:00Z',
       retrieved_at: '2026-10-14T11:40:00Z',
       score: 65,
@@ -402,12 +406,14 @@ export const FALLBACK_ARTICLES_BY_EVENT: Record<string, ScoredArticle[]> = {
   ],
   EONET_6403: [
     {
-      canonical_url: 'https://example.org/news/sakurajima-volcano-plume-observation-japan',
-      original_url: 'https://example.org/news/sakurajima-volcano-plume-observation-japan',
+      canonical_url:
+        'https://news.google.com/search?ceid=US:en&gl=US&hl=en-US&q=Mount+Sakurajima+Eruption+Kyushu+Japan',
+      original_url:
+        'https://news.google.com/search?q=Mount+Sakurajima+Eruption+Kyushu+Japan&hl=en-US&gl=US&ceid=US:en',
       title: 'Mount Sakurajima Explosive Eruption Sends Ash Plume Above Kagoshima Bay in Japan',
       description:
         'Volcanological observatories in Kyushu recorded ongoing crater activity and ash dispersion.',
-      publisher: 'Pacific Rim Earth Observatory News',
+      publisher: 'Google News Dispatch',
       published_at: '2026-10-14T05:20:00Z',
       retrieved_at: '2026-10-14T10:50:00Z',
       score: 100,
@@ -423,12 +429,14 @@ export const FALLBACK_ARTICLES_BY_EVENT: Record<string, ScoredArticle[]> = {
   ],
   EONET_6404: [
     {
-      canonical_url: 'https://example.org/news/danube-river-basin-flooding-austria-hydrology',
-      original_url: 'https://example.org/news/danube-river-basin-flooding-austria-hydrology',
+      canonical_url:
+        'https://news.google.com/search?ceid=US:en&gl=US&hl=en-US&q=Danube+Central+European+River+Basin+Flooding+Austria',
+      original_url:
+        'https://news.google.com/search?q=Danube+Central+European+River+Basin+Flooding+Austria&hl=en-US&gl=US&ceid=US:en',
       title: 'Hydrological Stations Along Danube River Basin in Austria Record High Water Levels',
       description:
         'Copernicus satellite flood mapping captures elevated river stages after sustained rainfall across Central Europe.',
-      publisher: 'European Hydrology Bulletin',
+      publisher: 'Google News Dispatch',
       published_at: '2026-10-13T14:00:00Z',
       retrieved_at: '2026-10-14T09:15:00Z',
       score: 90,
@@ -444,12 +452,14 @@ export const FALLBACK_ARTICLES_BY_EVENT: Record<string, ScoredArticle[]> = {
   ],
   EONET_6405: [
     {
-      canonical_url: 'https://example.org/news/iceberg-a83-southern-ocean-satellite-tracking',
-      original_url: 'https://example.org/news/iceberg-a83-southern-ocean-satellite-tracking',
+      canonical_url:
+        'https://earthobservatory.nasa.gov/search?q=Iceberg+A-83+Southern+Ocean',
+      original_url:
+        'https://earthobservatory.nasa.gov/search?q=Iceberg+A-83+Southern+Ocean',
       title: 'Polar Satellites Track Iceberg A-83 Drift Anomaly in Southern Ocean Waters',
       description:
         'U.S. National Ice Center analysts updated coordinates for tabular sea ice drifting in open ocean currents.',
-      publisher: 'Cryosphere & Polar Telemetry Review',
+      publisher: 'NASA Earth Observatory',
       published_at: '2026-10-13T11:00:00Z',
       retrieved_at: '2026-10-14T07:00:00Z',
       score: 75,
@@ -464,12 +474,14 @@ export const FALLBACK_ARTICLES_BY_EVENT: Record<string, ScoredArticle[]> = {
   ],
   EONET_6390: [
     {
-      canonical_url: 'https://example.org/news/sierra-nevada-oak-creek-wildfire-contained',
-      original_url: 'https://example.org/news/sierra-nevada-oak-creek-wildfire-contained',
+      canonical_url:
+        'https://news.google.com/search?ceid=US:en&gl=US&hl=en-US&q=Sierra+Nevada+Oak+Creek+Wildfire+California',
+      original_url:
+        'https://news.google.com/search?q=Sierra+Nevada+Oak+Creek+Wildfire+California&hl=en-US&gl=US&ceid=US:en',
       title: 'Sierra Nevada Oak Creek Wildfire Reaches Full Containment After Cooler Weather',
       description:
         'Incident teams in California confirmed perimeter stability across the 4,950-acre mountain footprint.',
-      publisher: 'Western Forestry & Fire Journal',
+      publisher: 'Google News Dispatch',
       published_at: '2026-10-11T16:30:00Z',
       retrieved_at: '2026-10-11T18:00:00Z',
       score: 90,
