@@ -9,6 +9,7 @@ if (typeof HTMLCanvasElement !== 'undefined') {
     restore: vi.fn(),
     scale: vi.fn(),
     clearRect: vi.fn(),
+    drawImage: vi.fn(),
     fillRect: vi.fn(),
     strokeRect: vi.fn(),
     beginPath: vi.fn(),
