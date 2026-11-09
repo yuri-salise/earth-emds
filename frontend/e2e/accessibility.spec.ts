@@ -5,6 +5,7 @@ test.describe('Keyboard Accessibility & Mandatory Disclaimers (NFR-06, NFR-10)',
     page,
   }) => {
     await page.goto('/');
+    await expect(page.getByTestId('search-input')).toBeVisible();
 
     // Press '/' shortcut to focus search input
     await page.keyboard.press('/');
