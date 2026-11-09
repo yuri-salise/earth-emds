@@ -8,7 +8,13 @@ import {
   getRepresentativeCoord,
 } from '../utils/categories';
 import { soundFx } from '../utils/soundFx';
-import { WORLD_LANDMASSES } from '../utils/worldLandmarks';
+import {
+  LandmassPolygon,
+  WORLD_LABELS,
+  WORLD_LAKES,
+  WORLD_LANDMASSES,
+  WorldRegionLabel,
+} from '../utils/worldLandmarks';
 
 interface GlobeCanvasProps {
   events: HazardEvent[];
@@ -24,6 +30,24 @@ interface Vec3Point {
   vx: number;
   vy: number;
   vz: number;
+}
+
+interface PrecomputedPolygon {
+  name: string;
+  iso?: string;
+  paletteIdx: number;
+  isAntarctica: boolean;
+  points: Vec3Point[];
+  cx3: number;
+  cy3: number;
+  cz3: number;
+  sinRadius: number;
+}
+
+interface PrecomputedLabel {
+  label: WorldRegionLabel;
+  point: Vec3Point;
+  displayText: string;
 }
 
 interface ProjectedMarker {
@@ -45,6 +69,35 @@ interface PrecomputedEventRenderData {
 
 const DEG_TO_RAD = Math.PI / 180;
 
+// 5 Realistic satellite cartographic biome/regional palettes
+const BIOME_PALETTES = [
+  // 0: Polar & Glacial (Antarctica, Greenland, Iceland)
+  {
+    fill: 'rgba(148, 184, 218, 0.34)',
+    stroke: 'rgba(186, 230, 253, 0.46)',
+  },
+  // 1: Boreal & Northern Temperate (North America, Europe, Northern/Eastern Asia)
+  {
+    fill: 'rgba(26, 49, 68, 0.88)',
+    stroke: 'rgba(100, 162, 198, 0.44)',
+  },
+  // 2: Arid & Subtropical Belt (North Africa, Middle East, Central Asia)
+  {
+    fill: 'rgba(38, 54, 68, 0.88)',
+    stroke: 'rgba(118, 168, 196, 0.42)',
+  },
+  // 3: Tropical & Equatorial Emerald (SE Asia, South Asia, Sub-Saharan Africa, Central/South America)
+  {
+    fill: 'rgba(22, 56, 66, 0.90)',
+    stroke: 'rgba(72, 184, 198, 0.48)',
+  },
+  // 4: Austral & Southern Continents (Australia, New Zealand, Southern Cone)
+  {
+    fill: 'rgba(32, 52, 68, 0.88)',
+    stroke: 'rgba(92, 168, 204, 0.45)',
+  },
+] as const;
+
 function toVec3(lon: number, lat: number): Vec3Point {
   const lambda = lon * DEG_TO_RAD;
   const phi = lat * DEG_TO_RAD;
@@ -58,16 +111,94 @@ function toVec3(lon: number, lat: number): Vec3Point {
   };
 }
 
-// Precompute static world landmasses once at module load (zero per-frame trig)
-const PRECOMPUTED_LANDMASSES: Vec3Point[][] = WORLD_LANDMASSES.map((land) =>
-  land.coordinates.map(([lon, lat]) => toVec3(lon, lat))
+function chooseBiomePalette(land: LandmassPolygon): number {
+  const iso = land.iso || '';
+  const cont = land.continent || '';
+  const sub = land.subregion || '';
+  if (cont === 'Antarctica' || iso === 'ATA' || iso === 'GRL' || iso === 'ISL') {
+    return 0;
+  }
+  if (
+    sub === 'Northern Africa' ||
+    sub === 'Western Asia' ||
+    sub === 'Central Asia'
+  ) {
+    return 2;
+  }
+  if (
+    sub === 'South-Eastern Asia' ||
+    sub === 'Southern Asia' ||
+    sub === 'Central America' ||
+    sub === 'Caribbean' ||
+    sub === 'Tropical South America' ||
+    cont === 'South America' ||
+    cont === 'Africa' ||
+    sub === 'Melanesia' ||
+    sub === 'Micronesia' ||
+    sub === 'Polynesia'
+  ) {
+    return 3;
+  }
+  if (cont === 'Oceania') {
+    return 4;
+  }
+  return 1;
+}
+
+function buildPrecomputedPolygon(land: LandmassPolygon): PrecomputedPolygon {
+  const points = land.coordinates.map(([lon, lat]) => toVec3(lon, lat));
+  let sx = 0;
+  let sy = 0;
+  let sz = 0;
+  const n = points.length || 1;
+  for (let i = 0; i < n; i++) {
+    sx += points[i].vx;
+    sy += points[i].vy;
+    sz += points[i].vz;
+  }
+  const norm = Math.hypot(sx, sy, sz) || 1;
+  const cx3 = sx / norm;
+  const cy3 = sy / norm;
+  const cz3 = sz / norm;
+
+  let minDot = 1;
+  for (let i = 0; i < n; i++) {
+    const dot = cx3 * points[i].vx + cy3 * points[i].vy + cz3 * points[i].vz;
+    if (dot < minDot) minDot = dot;
+  }
+  const maxAngle = Math.acos(Math.max(-1, Math.min(1, minDot)));
+  const sinRadius = Math.min(0.98, Math.sin(Math.min(Math.PI * 0.49, maxAngle + 0.05)));
+
+  return {
+    name: land.name,
+    iso: land.iso,
+    paletteIdx: chooseBiomePalette(land),
+    isAntarctica: land.name === 'Antarctica' || land.iso === 'ATA',
+    points,
+    cx3,
+    cy3,
+    cz3,
+    sinRadius,
+  };
+}
+
+// Precompute static world landmasses, lakes, and labels once at module load (zero per-frame trig)
+const PRECOMPUTED_LANDMASSES: PrecomputedPolygon[] = WORLD_LANDMASSES.map(buildPrecomputedPolygon);
+const PRECOMPUTED_BY_PALETTE: PrecomputedPolygon[][] = BIOME_PALETTES.map((_, idx) =>
+  PRECOMPUTED_LANDMASSES.filter((p) => p.paletteIdx === idx)
 );
+const PRECOMPUTED_LAKES: PrecomputedPolygon[] = WORLD_LAKES.map(buildPrecomputedPolygon);
+const PRECOMPUTED_LABELS: PrecomputedLabel[] = WORLD_LABELS.map((label) => ({
+  label,
+  point: toVec3(label.lon, label.lat),
+  displayText: label.kind === 'country' ? label.text : label.text.toUpperCase(),
+}));
 
 // Precompute graticule meridians & parallels once at module load
 const PRECOMPUTED_MERIDIANS: Vec3Point[][] = [];
 for (let lon = -180; lon < 180; lon += 30) {
   const line: Vec3Point[] = [];
-  for (let lat = -75; lat <= 75; lat += 10) {
+  for (let lat = -75; lat <= 75; lat += 6) {
     line.push(toVec3(lon, lat));
   }
   PRECOMPUTED_MERIDIANS.push(line);
@@ -77,15 +208,254 @@ const PRECOMPUTED_PARALLELS: Vec3Point[][] = [];
 for (let lat = -60; lat <= 60; lat += 30) {
   if (lat === 0) continue;
   const line: Vec3Point[] = [];
-  for (let lon = -180; lon <= 180; lon += 10) {
+  for (let lon = -180; lon <= 180; lon += 6) {
     line.push(toVec3(lon, lat));
   }
   PRECOMPUTED_PARALLELS.push(line);
 }
 
 const PRECOMPUTED_EQUATOR: Vec3Point[] = [];
-for (let lon = -180; lon <= 180; lon += 8) {
+for (let lon = -180; lon <= 180; lon += 5) {
   PRECOMPUTED_EQUATOR.push(toVec3(lon, 0));
+}
+
+// Reusable scratch buffers for horizon clipping (avoids per-frame array allocations)
+const SCRATCH_RX = new Float64Array(2048);
+const SCRATCH_RY = new Float64Array(2048);
+const SCRATCH_RZ = new Float64Array(2048);
+
+function tracePolygonFillOnSphere(
+  ctx: CanvasRenderingContext2D,
+  poly: PrecomputedPolygon,
+  cx: number,
+  cy: number,
+  radius: number,
+  sinLon0: number,
+  cosLon0: number,
+  sinLat0: number,
+  cosLat0: number,
+  camVx: number,
+  camVy: number,
+  camVz: number
+): void {
+  const centerCosC = poly.cx3 * camVx + poly.cy3 * camVy + poly.cz3 * camVz;
+  // Fast 3D bounding-sphere back-hemisphere cull
+  if (centerCosC < -poly.sinRadius) return;
+
+  const pts = poly.points;
+  const n = pts.length;
+  if (n < 3) return;
+
+  // Fast path: 100% of polygon is guaranteed on the front visible hemisphere
+  if (centerCosC > poly.sinRadius) {
+    for (let i = 0; i < n; i++) {
+      const p = pts[i];
+      const rx = p.vx * cosLon0 - p.vz * sinLon0;
+      const rz = p.vx * sinLon0 + p.vz * cosLon0;
+      const ry = p.vy * cosLat0 - rz * sinLat0;
+      const sx = cx + radius * rx;
+      const sy = cy - radius * ry;
+      if (i === 0) ctx.moveTo(sx, sy);
+      else ctx.lineTo(sx, sy);
+    }
+    ctx.closePath();
+    return;
+  }
+
+  // Horizon-straddling check
+  let minZ = 1;
+  let maxZ = -1;
+  const len = Math.min(n, SCRATCH_RX.length);
+  for (let i = 0; i < len; i++) {
+    const p = pts[i];
+    const rx = p.vx * cosLon0 - p.vz * sinLon0;
+    const rz = p.vx * sinLon0 + p.vz * cosLon0;
+    const ry = p.vy * cosLat0 - rz * sinLat0;
+    const z = p.vy * sinLat0 + rz * cosLat0;
+    SCRATCH_RX[i] = rx;
+    SCRATCH_RY[i] = ry;
+    SCRATCH_RZ[i] = z;
+    if (z < minZ) minZ = z;
+    if (z > maxZ) maxZ = z;
+  }
+
+  if (maxZ <= 0) return;
+
+  if (minZ >= 0) {
+    for (let i = 0; i < len; i++) {
+      const sx = cx + radius * SCRATCH_RX[i];
+      const sy = cy - radius * SCRATCH_RY[i];
+      if (i === 0) ctx.moveTo(sx, sy);
+      else ctx.lineTo(sx, sy);
+    }
+    ctx.closePath();
+    return;
+  }
+
+  // Exact 3D horizon clipping (z = 0 intersection + circular rim clamping for z < 0)
+  let started = false;
+  let prevOnRim = false;
+  let prevRimTheta = 0;
+
+  const emitRimPoint = (ux: number, uy: number) => {
+    const theta = Math.atan2(uy, ux);
+    if (started && prevOnRim) {
+      let dTheta = theta - prevRimTheta;
+      while (dTheta > Math.PI) dTheta -= Math.PI * 2;
+      while (dTheta < -Math.PI) dTheta += Math.PI * 2;
+      const absD = Math.abs(dTheta);
+      if (absD > 0.07 && absD < Math.PI * 0.95) {
+        const steps = Math.min(24, Math.ceil(absD / 0.07));
+        for (let s = 1; s < steps; s++) {
+          const a = prevRimTheta + (dTheta * s) / steps;
+          ctx.lineTo(cx + radius * Math.cos(a), cy - radius * Math.sin(a));
+        }
+      }
+    }
+    const sx = cx + radius * ux;
+    const sy = cy - radius * uy;
+    if (!started) {
+      ctx.moveTo(sx, sy);
+      started = true;
+    } else {
+      ctx.lineTo(sx, sy);
+    }
+    prevOnRim = true;
+    prevRimTheta = theta;
+  };
+
+  for (let i = 0; i < len; i++) {
+    const prevIdx = i === 0 ? len - 1 : i - 1;
+    const rx1 = SCRATCH_RX[prevIdx];
+    const ry1 = SCRATCH_RY[prevIdx];
+    const z1 = SCRATCH_RZ[prevIdx];
+    const rx2 = SCRATCH_RX[i];
+    const ry2 = SCRATCH_RY[i];
+    const z2 = SCRATCH_RZ[i];
+
+    if ((z1 >= 0 && z2 < 0) || (z1 < 0 && z2 >= 0)) {
+      const denom = z1 - z2;
+      const t = Math.abs(denom) > 1e-9 ? z1 / denom : 0.5;
+      const ix = rx1 + t * (rx2 - rx1);
+      const iy = ry1 + t * (ry2 - ry1);
+      const inv = 1 / (Math.hypot(ix, iy) || 1);
+      emitRimPoint(ix * inv, iy * inv);
+    }
+
+    if (z2 >= 0) {
+      const sx = cx + radius * rx2;
+      const sy = cy - radius * ry2;
+      if (!started) {
+        ctx.moveTo(sx, sy);
+        started = true;
+      } else {
+        ctx.lineTo(sx, sy);
+      }
+      prevOnRim = false;
+    } else {
+      const inv = 1 / (Math.hypot(rx2, ry2) || 1);
+      emitRimPoint(rx2 * inv, ry2 * inv);
+    }
+  }
+
+  if (started) {
+    ctx.closePath();
+  }
+}
+
+function tracePolygonStrokeOnSphere(
+  ctx: CanvasRenderingContext2D,
+  poly: PrecomputedPolygon,
+  cx: number,
+  cy: number,
+  radius: number,
+  sinLon0: number,
+  cosLon0: number,
+  sinLat0: number,
+  cosLat0: number,
+  camVx: number,
+  camVy: number,
+  camVz: number
+): void {
+  const centerCosC = poly.cx3 * camVx + poly.cy3 * camVy + poly.cz3 * camVz;
+  if (centerCosC < -poly.sinRadius) return;
+
+  const pts = poly.points;
+  const n = pts.length;
+  if (n < 2) return;
+
+  const isAnt = poly.isAntarctica;
+
+  // Fast path: entire polygon is on the visible front hemisphere
+  if (centerCosC > poly.sinRadius && !isAnt) {
+    for (let i = 0; i < n; i++) {
+      const p = pts[i];
+      const rx = p.vx * cosLon0 - p.vz * sinLon0;
+      const rz = p.vx * sinLon0 + p.vz * cosLon0;
+      const ry = p.vy * cosLat0 - rz * sinLat0;
+      const sx = cx + radius * rx;
+      const sy = cy - radius * ry;
+      if (i === 0) ctx.moveTo(sx, sy);
+      else ctx.lineTo(sx, sy);
+    }
+    return;
+  }
+
+  // Clip stroke strictly to visible hemisphere (z >= 0) so horizon rim is never stroked
+  let penDown = false;
+  let prevRx = 0;
+  let prevRy = 0;
+  let prevZ = -1;
+  let prevValid = false;
+
+  for (let i = 0; i < n; i++) {
+    const p = pts[i];
+    if (isAnt && p.lat < -88.2) {
+      penDown = false;
+      prevValid = false;
+      continue;
+    }
+
+    const rx = p.vx * cosLon0 - p.vz * sinLon0;
+    const rz = p.vx * sinLon0 + p.vz * cosLon0;
+    const ry = p.vy * cosLat0 - rz * sinLat0;
+    const z = p.vy * sinLat0 + rz * cosLat0;
+
+    if (prevValid && ((prevZ >= 0 && z < 0) || (prevZ < 0 && z >= 0))) {
+      const denom = prevZ - z;
+      const t = Math.abs(denom) > 1e-9 ? prevZ / denom : 0.5;
+      const ix = prevRx + t * (rx - prevRx);
+      const iy = prevRy + t * (ry - prevRy);
+      const inv = 1 / (Math.hypot(ix, iy) || 1);
+      const sx = cx + radius * ix * inv;
+      const sy = cy - radius * iy * inv;
+      if (prevZ >= 0) {
+        ctx.lineTo(sx, sy);
+        penDown = false;
+      } else {
+        ctx.moveTo(sx, sy);
+        penDown = true;
+      }
+    }
+
+    if (z >= 0) {
+      const sx = cx + radius * rx;
+      const sy = cy - radius * ry;
+      if (!penDown) {
+        ctx.moveTo(sx, sy);
+        penDown = true;
+      } else {
+        ctx.lineTo(sx, sy);
+      }
+    } else {
+      penDown = false;
+    }
+
+    prevRx = rx;
+    prevRy = ry;
+    prevZ = z;
+    prevValid = true;
+  }
 }
 
 function normalizeLon(lon: number): number {
@@ -180,7 +550,6 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
       const lines: Vec3Point[][] = [];
       const pointTrack: Vec3Point[] = [];
 
-      // Limit per-event observations to most recent 12 for ultra-fast rendering
       const obsSlice = ev.observations.slice(0, 12);
       for (let i = obsSlice.length - 1; i >= 0; i--) {
         const geom = obsSlice[i].geom;
@@ -270,28 +639,29 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
         bctx.fillStyle = bgGrad;
         bctx.fillRect(0, 0, width, height);
 
-        // 2. Outer atmospheric halo
-        const haloGrad = bctx.createRadialGradient(cx, cy, radius * 0.94, cx, cy, radius * 1.15);
-        haloGrad.addColorStop(0, 'rgba(56, 189, 248, 0.22)');
-        haloGrad.addColorStop(0.45, 'rgba(99, 102, 241, 0.08)');
+        // 2. Outer atmospheric Rayleigh halo
+        const haloGrad = bctx.createRadialGradient(cx, cy, radius * 0.94, cx, cy, radius * 1.16);
+        haloGrad.addColorStop(0, 'rgba(56, 189, 248, 0.25)');
+        haloGrad.addColorStop(0.45, 'rgba(99, 102, 241, 0.09)');
         haloGrad.addColorStop(1, 'rgba(6, 9, 17, 0)');
         bctx.fillStyle = haloGrad;
         bctx.beginPath();
-        bctx.arc(cx, cy, radius * 1.15, 0, Math.PI * 2);
+        bctx.arc(cx, cy, radius * 1.16, 0, Math.PI * 2);
         bctx.fill();
 
-        // 3. Globe ocean sphere body
+        // 3. Realistic bathymetric ocean sphere body
         const sphereGrad = bctx.createRadialGradient(
           cx - radius * 0.28,
           cy - radius * 0.28,
-          radius * 0.08,
+          radius * 0.06,
           cx,
           cy,
           radius
         );
-        sphereGrad.addColorStop(0, '#13233F');
-        sphereGrad.addColorStop(0.65, '#0B1528');
-        sphereGrad.addColorStop(1, '#060B16');
+        sphereGrad.addColorStop(0, '#122B4D');
+        sphereGrad.addColorStop(0.55, '#0B1A33');
+        sphereGrad.addColorStop(0.88, '#081224');
+        sphereGrad.addColorStop(1, '#050B16');
         bctx.fillStyle = sphereGrad;
         bctx.beginPath();
         bctx.arc(cx, cy, radius, 0, Math.PI * 2);
@@ -332,19 +702,22 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
     const baseRadius = Math.min(width, height) * 0.39;
     const radius = baseRadius * cam.zoom;
 
-    // Blit pre-rendered background & sphere gradients in < 0.1ms
+    // Blit pre-rendered background & ocean sphere gradients in < 0.1ms
     const bgCanvas = getOrBuildBackgroundCanvas(width, height, dpr, radius);
     ctx.save();
     ctx.drawImage(bgCanvas, 0, 0);
     ctx.scale(dpr, dpr);
 
-    // Compute camera rotation trigonometry ONCE for the entire frame
+    // Compute camera rotation trigonometry and 3D camera direction vector ONCE for the frame
     const lambda0 = cam.lon * DEG_TO_RAD;
     const phi0 = cam.lat * DEG_TO_RAD;
     const sinLon0 = Math.sin(lambda0);
     const cosLon0 = Math.cos(lambda0);
     const sinLat0 = Math.sin(phi0);
     const cosLat0 = Math.cos(phi0);
+    const camVx = cosLat0 * sinLon0;
+    const camVy = sinLat0;
+    const camVz = cosLat0 * cosLon0;
 
     // Clip inside sphere
     ctx.save();
@@ -353,8 +726,8 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
     ctx.clip();
 
     // 4. 3D Graticule Grid (batched into a single stroke call)
-    ctx.strokeStyle = 'rgba(148, 163, 184, 0.11)';
-    ctx.lineWidth = 0.8;
+    ctx.strokeStyle = 'rgba(148, 163, 184, 0.09)';
+    ctx.lineWidth = 0.75;
     ctx.beginPath();
 
     for (let m = 0; m < PRECOMPUTED_MERIDIANS.length; m++) {
@@ -365,7 +738,7 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
         const rx = p.vx * cosLon0 - p.vz * sinLon0;
         const rz = p.vx * sinLon0 + p.vz * cosLon0;
         const cosC = p.vy * sinLat0 + rz * cosLat0;
-        if (cosC >= -0.05) {
+        if (cosC >= 0) {
           const sx = cx + radius * rx;
           const sy = cy - radius * (p.vy * cosLat0 - rz * sinLat0);
           if (!started) {
@@ -388,7 +761,7 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
         const rx = p.vx * cosLon0 - p.vz * sinLon0;
         const rz = p.vx * sinLon0 + p.vz * cosLon0;
         const cosC = p.vy * sinLat0 + rz * cosLat0;
-        if (cosC >= -0.05) {
+        if (cosC >= 0) {
           const sx = cx + radius * rx;
           const sy = cy - radius * (p.vy * cosLat0 - rz * sinLat0);
           if (!started) {
@@ -405,8 +778,8 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
     ctx.stroke();
 
     // Equator highlight
-    ctx.strokeStyle = 'rgba(56, 189, 248, 0.22)';
-    ctx.lineWidth = 1.1;
+    ctx.strokeStyle = 'rgba(56, 189, 248, 0.18)';
+    ctx.lineWidth = 1.0;
     ctx.beginPath();
     let eqStarted = false;
     for (let i = 0; i < PRECOMPUTED_EQUATOR.length; i++) {
@@ -414,7 +787,7 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
       const rx = p.vx * cosLon0 - p.vz * sinLon0;
       const rz = p.vx * sinLon0 + p.vz * cosLon0;
       const cosC = p.vy * sinLat0 + rz * cosLat0;
-      if (cosC >= -0.05) {
+      if (cosC >= 0) {
         const sx = cx + radius * rx;
         const sy = cy - radius * (p.vy * cosLat0 - rz * sinLat0);
         if (!eqStarted) {
@@ -429,30 +802,133 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
     }
     ctx.stroke();
 
-    // 5. Continental & Island Vector Landmasses (fast matrix dot-product)
-    ctx.fillStyle = 'rgba(30, 41, 59, 0.72)';
-    ctx.strokeStyle = 'rgba(100, 116, 139, 0.45)';
-    ctx.lineWidth = 1;
-    for (let l = 0; l < PRECOMPUTED_LANDMASSES.length; l++) {
-      const poly = PRECOMPUTED_LANDMASSES[l];
+    // 5. Realistic Natural Earth 50m Country & Island Polygons (Batched by Biome + Exact Horizon Clipping)
+    for (let palIdx = 0; palIdx < BIOME_PALETTES.length; palIdx++) {
+      const group = PRECOMPUTED_BY_PALETTE[palIdx];
+      if (group.length === 0) continue;
+      const palette = BIOME_PALETTES[palIdx];
+
+      // Batched Fill Pass
+      ctx.fillStyle = palette.fill;
       ctx.beginPath();
-      let visibleCount = 0;
-      for (let i = 0; i < poly.length; i++) {
-        const p = poly[i];
-        const rx = p.vx * cosLon0 - p.vz * sinLon0;
-        const rz = p.vx * sinLon0 + p.vz * cosLon0;
-        const cosC = p.vy * sinLat0 + rz * cosLat0;
-        if (cosC >= -0.05) visibleCount++;
-        const sx = cx + radius * rx;
-        const sy = cy - radius * (p.vy * cosLat0 - rz * sinLat0);
-        if (i === 0) ctx.moveTo(sx, sy);
-        else ctx.lineTo(sx, sy);
+      for (let i = 0; i < group.length; i++) {
+        tracePolygonFillOnSphere(
+          ctx,
+          group[i],
+          cx,
+          cy,
+          radius,
+          sinLon0,
+          cosLon0,
+          sinLat0,
+          cosLat0,
+          camVx,
+          camVy,
+          camVz
+        );
       }
-      if (visibleCount > 1) {
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
+      ctx.fill();
+
+      // Batched Coastline & Country Border Stroke Pass
+      ctx.strokeStyle = palette.stroke;
+      ctx.lineWidth = cam.zoom >= 1.4 ? 1.05 : 0.85;
+      ctx.beginPath();
+      for (let i = 0; i < group.length; i++) {
+        tracePolygonStrokeOnSphere(
+          ctx,
+          group[i],
+          cx,
+          cy,
+          radius,
+          sinLon0,
+          cosLon0,
+          sinLat0,
+          cosLat0,
+          camVx,
+          camVy,
+          camVz
+        );
       }
+      ctx.stroke();
+    }
+
+    // 5b. Major Inland Seas & Great Lakes (Natural Earth 110m Lakes)
+    ctx.fillStyle = '#0A1930';
+    ctx.strokeStyle = 'rgba(56, 189, 248, 0.28)';
+    ctx.lineWidth = 0.7;
+    ctx.beginPath();
+    for (let i = 0; i < PRECOMPUTED_LAKES.length; i++) {
+      tracePolygonFillOnSphere(
+        ctx,
+        PRECOMPUTED_LAKES[i],
+        cx,
+        cy,
+        radius,
+        sinLon0,
+        cosLon0,
+        sinLat0,
+        cosLat0,
+        camVx,
+        camVy,
+        camVz
+      );
+    }
+    ctx.fill();
+    ctx.stroke();
+
+    // 5c. Cartographic Region, Ocean & Country Labels (LOD by Zoom + Collision Avoidance)
+    const placedBoxes: Array<{ x1: number; y1: number; x2: number; y2: number }> = [];
+    for (let i = 0; i < PRECOMPUTED_LABELS.length; i++) {
+      const item = PRECOMPUTED_LABELS[i];
+      const { label, point, displayText } = item;
+      if (cam.zoom < label.minZoom) continue;
+
+      const rx = point.vx * cosLon0 - point.vz * sinLon0;
+      const rz = point.vx * sinLon0 + point.vz * cosLon0;
+      const cosC = point.vy * sinLat0 + rz * cosLat0;
+      // Fade out labels smoothly before reaching the horizon limb
+      if (cosC < 0.32) continue;
+
+      const sx = cx + radius * rx;
+      const sy = cy - radius * (point.vy * cosLat0 - rz * sinLat0);
+
+      let halfW = displayText.length * 3.1;
+      let halfH = 6;
+      if (label.kind === 'continent' || label.kind === 'region') {
+        halfW = displayText.length * 3.8;
+        halfH = 8;
+      }
+
+      const box = {
+        x1: sx - halfW,
+        y1: sy - halfH,
+        x2: sx + halfW,
+        y2: sy + halfH,
+      };
+
+      let collides = false;
+      for (let b = 0; b < placedBoxes.length; b++) {
+        const eb = placedBoxes[b];
+        if (box.x1 < eb.x2 && box.x2 > eb.x1 && box.y1 < eb.y2 && box.y2 > eb.y1) {
+          collides = true;
+          break;
+        }
+      }
+      if (collides) continue;
+      placedBoxes.push(box);
+
+      const alpha = Math.min(1, (cosC - 0.32) * 2.2);
+      if (label.kind === 'continent' || label.kind === 'region') {
+        ctx.font = '700 10px "Space Grotesk", sans-serif';
+        ctx.fillStyle = `rgba(186, 230, 253, ${(0.56 * alpha).toFixed(2)})`;
+      } else if (label.kind === 'ocean') {
+        ctx.font = '500 9px "Plus Jakarta Sans", sans-serif';
+        ctx.fillStyle = `rgba(56, 189, 248, ${(0.34 * alpha).toFixed(2)})`;
+      } else {
+        ctx.font = '600 9.5px "Plus Jakarta Sans", sans-serif';
+        ctx.fillStyle = `rgba(226, 232, 240, ${(0.72 * alpha).toFixed(2)})`;
+      }
+      ctx.fillText(displayText, sx - halfW * 0.85, sy + 3);
     }
 
     // 6. Plot Event Geometries (Polygons, LineStrings, and Points)
@@ -474,7 +950,7 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
           const rx = p.vx * cosLon0 - p.vz * sinLon0;
           const rz = p.vx * sinLon0 + p.vz * cosLon0;
           const cosC = p.vy * sinLat0 + rz * cosLat0;
-          if (cosC >= -0.05) anyVis = true;
+          if (cosC >= 0) anyVis = true;
           const sx = cx + radius * rx;
           const sy = cy - radius * (p.vy * cosLat0 - rz * sinLat0);
           if (i === 0) ctx.moveTo(sx, sy);
@@ -501,7 +977,7 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
             const rx = p.vx * cosLon0 - p.vz * sinLon0;
             const rz = p.vx * sinLon0 + p.vz * cosLon0;
             const cosC = p.vy * sinLat0 + rz * cosLat0;
-            if (cosC >= -0.05) {
+            if (cosC >= 0) {
               const sx = cx + radius * rx;
               const sy = cy - radius * (p.vy * cosLat0 - rz * sinLat0);
               if (!started) {
@@ -525,7 +1001,7 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
         const rx = repPoint.vx * cosLon0 - repPoint.vz * sinLon0;
         const rz = repPoint.vx * sinLon0 + repPoint.vz * cosLon0;
         const cosC = repPoint.vy * sinLat0 + rz * cosLat0;
-        if (cosC >= -0.05) {
+        if (cosC >= 0) {
           const sx = cx + radius * rx;
           const sy = cy - radius * (repPoint.vy * cosLat0 - rz * sinLat0);
 
@@ -586,7 +1062,7 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
     // 7. Crisp rim border
     ctx.beginPath();
     ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
+    ctx.strokeStyle = 'rgba(56, 189, 248, 0.38)';
     ctx.lineWidth = 1.4;
     ctx.stroke();
 
@@ -750,7 +1226,6 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
       const stepLat = dy * sensitivity;
       cam.lon = normalizeLon(cam.lon + stepLon);
       cam.lat = clampLat(cam.lat + stepLat);
-      // Smooth velocity blending for silky inertia release
       cam.velLon = cam.velLon * 0.35 + stepLon * 0.65;
       cam.velLat = cam.velLat * 0.35 + stepLat * 0.65;
       cam.dragStartX = e.clientX;
