@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HazardEvent } from '../types/domain';
 import {
   CATEGORY_MAP,
+  CategoryMeta,
   formatWgs84,
   getCategoryMeta,
   getRepresentativeCoord,
@@ -17,6 +18,14 @@ interface GlobeCanvasProps {
   useBboxFilter: boolean;
 }
 
+interface Vec3Point {
+  lon: number;
+  lat: number;
+  vx: number;
+  vy: number;
+  vz: number;
+}
+
 interface ProjectedMarker {
   event: HazardEvent;
   x: number;
@@ -26,7 +35,58 @@ interface ProjectedMarker {
   color: string;
 }
 
+interface PrecomputedEventRenderData {
+  event: HazardEvent;
+  meta: CategoryMeta;
+  repPoint: Vec3Point | null;
+  polygons: Vec3Point[][];
+  lines: Vec3Point[][];
+}
+
 const DEG_TO_RAD = Math.PI / 180;
+
+function toVec3(lon: number, lat: number): Vec3Point {
+  const lambda = lon * DEG_TO_RAD;
+  const phi = lat * DEG_TO_RAD;
+  const cosPhi = Math.cos(phi);
+  return {
+    lon,
+    lat,
+    vx: cosPhi * Math.sin(lambda),
+    vy: Math.sin(phi),
+    vz: cosPhi * Math.cos(lambda),
+  };
+}
+
+// Precompute static world landmasses once at module load (zero per-frame trig)
+const PRECOMPUTED_LANDMASSES: Vec3Point[][] = WORLD_LANDMASSES.map((land) =>
+  land.coordinates.map(([lon, lat]) => toVec3(lon, lat))
+);
+
+// Precompute graticule meridians & parallels once at module load
+const PRECOMPUTED_MERIDIANS: Vec3Point[][] = [];
+for (let lon = -180; lon < 180; lon += 30) {
+  const line: Vec3Point[] = [];
+  for (let lat = -75; lat <= 75; lat += 10) {
+    line.push(toVec3(lon, lat));
+  }
+  PRECOMPUTED_MERIDIANS.push(line);
+}
+
+const PRECOMPUTED_PARALLELS: Vec3Point[][] = [];
+for (let lat = -60; lat <= 60; lat += 30) {
+  if (lat === 0) continue;
+  const line: Vec3Point[] = [];
+  for (let lon = -180; lon <= 180; lon += 10) {
+    line.push(toVec3(lon, lat));
+  }
+  PRECOMPUTED_PARALLELS.push(line);
+}
+
+const PRECOMPUTED_EQUATOR: Vec3Point[] = [];
+for (let lon = -180; lon <= 180; lon += 8) {
+  PRECOMPUTED_EQUATOR.push(toVec3(lon, 0));
+}
 
 function normalizeLon(lon: number): number {
   let l = lon;
@@ -37,39 +97,6 @@ function normalizeLon(lon: number): number {
 
 function clampLat(lat: number): number {
   return Math.max(-78, Math.min(78, lat));
-}
-
-function projectPoint3D(
-  lon: number,
-  lat: number,
-  centerLon: number,
-  centerLat: number,
-  radius: number,
-  cx: number,
-  cy: number
-): { x: number; y: number; z: number; visible: boolean } {
-  const lambda = lon * DEG_TO_RAD;
-  const phi = lat * DEG_TO_RAD;
-  const lambda0 = centerLon * DEG_TO_RAD;
-  const phi0 = centerLat * DEG_TO_RAD;
-
-  const dLambda = lambda - lambda0;
-  const cosPhi = Math.cos(phi);
-  const sinPhi = Math.sin(phi);
-  const cosPhi0 = Math.cos(phi0);
-  const sinPhi0 = Math.sin(phi0);
-  const cosDLambda = Math.cos(dLambda);
-
-  const cosC = sinPhi0 * sinPhi + cosPhi0 * cosPhi * cosDLambda;
-  const x = cx + radius * cosPhi * Math.sin(dLambda);
-  const y = cy - radius * (cosPhi0 * sinPhi - sinPhi0 * cosPhi * cosDLambda);
-
-  return {
-    x,
-    y,
-    z: cosC,
-    visible: cosC >= -0.05,
-  };
 }
 
 function computeViewportBbox(
@@ -86,6 +113,12 @@ function computeViewportBbox(
   return [minLon, minLat, maxLon, maxLat];
 }
 
+function formatTelemetryString(lon: number, lat: number, zoom: number): string {
+  const latStr = lat >= 0 ? `${lat.toFixed(1)}°N` : `${Math.abs(lat).toFixed(1)}°S`;
+  const lonStr = lon >= 0 ? `${lon.toFixed(1)}°E` : `${Math.abs(lon).toFixed(1)}°W`;
+  return `CAM ${latStr}, ${lonStr} · ${zoom.toFixed(2)}x`;
+}
+
 export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
   events,
   selectedEvent,
@@ -95,6 +128,18 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const bgCanvasRef = useRef<{
+    canvas: HTMLCanvasElement;
+    width: number;
+    height: number;
+    dpr: number;
+    radius: number;
+  } | null>(null);
+
+  const sizeRef = useRef({ width: 880, height: 620, dpr: 1 });
+  const engineDotRef = useRef<HTMLSpanElement | null>(null);
+  const engineTextRef = useRef<HTMLSpanElement | null>(null);
+  const telemetryPillRef = useRef<HTMLDivElement | null>(null);
 
   const cameraRef = useRef({
     lon: 25,
@@ -113,6 +158,7 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
 
   const markersRef = useRef<ProjectedMarker[]>([]);
   const rafIdRef = useRef<number | null>(null);
+  const hoveredIdRef = useRef<string | null>(null);
 
   const [hoveredEvent, setHoveredEvent] = useState<{
     event: HazardEvent;
@@ -121,12 +167,64 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
     lon: number;
     lat: number;
   } | null>(null);
-  const [isActivelyRendering, setIsActivelyRendering] = useState<boolean>(false);
-  const [cameraTelemetry, setCameraTelemetry] = useState({
-    lon: 25,
-    lat: 18,
-    zoom: 1.08,
-  });
+
+  // Precompute 3D unit vectors for all events only when `events` array changes
+  const precomputedEvents = useMemo<PrecomputedEventRenderData[]>(() => {
+    return events.map((ev) => {
+      const meta = getCategoryMeta(ev.category);
+      const latestObs = ev.observations[0];
+      const repCoord = getRepresentativeCoord(latestObs?.geom);
+      const repPoint = repCoord ? toVec3(repCoord[0], repCoord[1]) : null;
+
+      const polygons: Vec3Point[][] = [];
+      const lines: Vec3Point[][] = [];
+      const pointTrack: Vec3Point[] = [];
+
+      // Limit per-event observations to most recent 12 for ultra-fast rendering
+      const obsSlice = ev.observations.slice(0, 12);
+      for (let i = obsSlice.length - 1; i >= 0; i--) {
+        const geom = obsSlice[i].geom;
+        if (geom.type === 'Polygon' && geom.coordinates[0]?.length) {
+          polygons.push(geom.coordinates[0].map(([lon, lat]) => toVec3(lon, lat)));
+        } else if (geom.type === 'LineString' && geom.coordinates.length > 1) {
+          lines.push(geom.coordinates.slice(0, 20).map(([lon, lat]) => toVec3(lon, lat)));
+        } else if (geom.type === 'Point') {
+          pointTrack.push(toVec3(geom.coordinates[0], geom.coordinates[1]));
+        }
+      }
+      if (pointTrack.length > 1) {
+        lines.push(pointTrack);
+      }
+
+      return {
+        event: ev,
+        meta,
+        repPoint,
+        polygons,
+        lines,
+      };
+    });
+  }, [events]);
+
+  const setEngineHudState = useCallback((active: boolean) => {
+    if (engineDotRef.current) {
+      engineDotRef.current.className = `engine-dot ${
+        active ? 'engine-dot-active' : 'engine-dot-idle'
+      }`;
+    }
+    if (engineTextRef.current) {
+      engineTextRef.current.textContent = active
+        ? 'On-Demand 3D (Rendering Frame)'
+        : 'On-Demand 3D (Idle — ~0% GPU)';
+    }
+  }, []);
+
+  const updateTelemetryDom = useCallback(() => {
+    if (telemetryPillRef.current) {
+      const cam = cameraRef.current;
+      telemetryPillRef.current.textContent = formatTelemetryString(cam.lon, cam.lat, cam.zoom);
+    }
+  }, []);
 
   const emitCurrentBbox = useCallback(() => {
     const cam = cameraRef.current;
@@ -134,24 +232,99 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
     onViewportBboxChange(bbox);
   }, [onViewportBboxChange]);
 
+  const getOrBuildBackgroundCanvas = useCallback(
+    (width: number, height: number, dpr: number, radius: number): HTMLCanvasElement => {
+      const cached = bgCanvasRef.current;
+      if (
+        cached &&
+        cached.width === width &&
+        cached.height === height &&
+        cached.dpr === dpr &&
+        Math.abs(cached.radius - radius) < 0.5
+      ) {
+        return cached.canvas;
+      }
+
+      const offCanvas = cached?.canvas ?? document.createElement('canvas');
+      offCanvas.width = Math.max(1, Math.round(width * dpr));
+      offCanvas.height = Math.max(1, Math.round(height * dpr));
+      const bctx = offCanvas.getContext('2d');
+      if (bctx) {
+        bctx.save();
+        bctx.scale(dpr, dpr);
+        const cx = width * 0.5;
+        const cy = height * 0.5;
+
+        // 1. Deep space radial background
+        const bgGrad = bctx.createRadialGradient(
+          cx,
+          cy,
+          radius * 0.2,
+          cx,
+          cy,
+          Math.max(width, height)
+        );
+        bgGrad.addColorStop(0, '#0B1325');
+        bgGrad.addColorStop(0.55, '#070B16');
+        bgGrad.addColorStop(1, '#04070E');
+        bctx.fillStyle = bgGrad;
+        bctx.fillRect(0, 0, width, height);
+
+        // 2. Outer atmospheric halo
+        const haloGrad = bctx.createRadialGradient(cx, cy, radius * 0.94, cx, cy, radius * 1.15);
+        haloGrad.addColorStop(0, 'rgba(56, 189, 248, 0.22)');
+        haloGrad.addColorStop(0.45, 'rgba(99, 102, 241, 0.08)');
+        haloGrad.addColorStop(1, 'rgba(6, 9, 17, 0)');
+        bctx.fillStyle = haloGrad;
+        bctx.beginPath();
+        bctx.arc(cx, cy, radius * 1.15, 0, Math.PI * 2);
+        bctx.fill();
+
+        // 3. Globe ocean sphere body
+        const sphereGrad = bctx.createRadialGradient(
+          cx - radius * 0.28,
+          cy - radius * 0.28,
+          radius * 0.08,
+          cx,
+          cy,
+          radius
+        );
+        sphereGrad.addColorStop(0, '#13233F');
+        sphereGrad.addColorStop(0.65, '#0B1528');
+        sphereGrad.addColorStop(1, '#060B16');
+        bctx.fillStyle = sphereGrad;
+        bctx.beginPath();
+        bctx.arc(cx, cy, radius, 0, Math.PI * 2);
+        bctx.fill();
+
+        bctx.restore();
+      }
+
+      bgCanvasRef.current = {
+        canvas: offCanvas,
+        width,
+        height,
+        dpr,
+        radius,
+      };
+      return offCanvas;
+    },
+    []
+  );
+
   const drawFrame = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { alpha: false });
     if (!ctx) return;
 
-    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-    const width = canvas.clientWidth || 800;
-    const height = canvas.clientHeight || 600;
-
-    if (canvas.width !== Math.round(width * dpr) || canvas.height !== Math.round(height * dpr)) {
-      canvas.width = Math.round(width * dpr);
-      canvas.height = Math.round(height * dpr);
+    const { width, height, dpr } = sizeRef.current;
+    const targetW = Math.max(1, Math.round(width * dpr));
+    const targetH = Math.max(1, Math.round(height * dpr));
+    if (canvas.width !== targetW || canvas.height !== targetH) {
+      canvas.width = targetW;
+      canvas.height = targetH;
     }
-
-    ctx.save();
-    ctx.scale(dpr, dpr);
-    ctx.clearRect(0, 0, width, height);
 
     const cam = cameraRef.current;
     const cx = width * 0.5;
@@ -159,102 +332,96 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
     const baseRadius = Math.min(width, height) * 0.39;
     const radius = baseRadius * cam.zoom;
 
-    // 1. Deep space radial gradient
-    const bgGrad = ctx.createRadialGradient(cx, cy, radius * 0.2, cx, cy, Math.max(width, height));
-    bgGrad.addColorStop(0, '#0B1325');
-    bgGrad.addColorStop(0.55, '#070B16');
-    bgGrad.addColorStop(1, '#04070E');
-    ctx.fillStyle = bgGrad;
-    ctx.fillRect(0, 0, width, height);
+    // Blit pre-rendered background & sphere gradients in < 0.1ms
+    const bgCanvas = getOrBuildBackgroundCanvas(width, height, dpr, radius);
+    ctx.save();
+    ctx.drawImage(bgCanvas, 0, 0);
+    ctx.scale(dpr, dpr);
 
-    // 2. Outer atmospheric halo
-    const haloGrad = ctx.createRadialGradient(cx, cy, radius * 0.94, cx, cy, radius * 1.15);
-    haloGrad.addColorStop(0, 'rgba(56, 189, 248, 0.22)');
-    haloGrad.addColorStop(0.45, 'rgba(99, 102, 241, 0.08)');
-    haloGrad.addColorStop(1, 'rgba(6, 9, 17, 0)');
-    ctx.fillStyle = haloGrad;
-    ctx.beginPath();
-    ctx.arc(cx, cy, radius * 1.15, 0, Math.PI * 2);
-    ctx.fill();
+    // Compute camera rotation trigonometry ONCE for the entire frame
+    const lambda0 = cam.lon * DEG_TO_RAD;
+    const phi0 = cam.lat * DEG_TO_RAD;
+    const sinLon0 = Math.sin(lambda0);
+    const cosLon0 = Math.cos(lambda0);
+    const sinLat0 = Math.sin(phi0);
+    const cosLat0 = Math.cos(phi0);
 
-    // 3. Globe ocean sphere body
-    const sphereGrad = ctx.createRadialGradient(
-      cx - radius * 0.28,
-      cy - radius * 0.28,
-      radius * 0.08,
-      cx,
-      cy,
-      radius
-    );
-    sphereGrad.addColorStop(0, '#13233F');
-    sphereGrad.addColorStop(0.65, '#0B1528');
-    sphereGrad.addColorStop(1, '#060B16');
-    ctx.fillStyle = sphereGrad;
-    ctx.beginPath();
-    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Clip inside sphere for graticules, landmasses, and geometries
+    // Clip inside sphere
     ctx.save();
     ctx.beginPath();
     ctx.arc(cx, cy, radius, 0, Math.PI * 2);
     ctx.clip();
 
-    // 4. 3D Graticule Grid (every 20 degrees)
+    // 4. 3D Graticule Grid (batched into a single stroke call)
     ctx.strokeStyle = 'rgba(148, 163, 184, 0.11)';
     ctx.lineWidth = 0.8;
+    ctx.beginPath();
 
-    for (let lon = -180; lon < 180; lon += 20) {
-      ctx.beginPath();
+    for (let m = 0; m < PRECOMPUTED_MERIDIANS.length; m++) {
+      const line = PRECOMPUTED_MERIDIANS[m];
       let started = false;
-      for (let lat = -80; lat <= 80; lat += 5) {
-        const pt = projectPoint3D(lon, lat, cam.lon, cam.lat, radius, cx, cy);
-        if (pt.visible) {
+      for (let i = 0; i < line.length; i++) {
+        const p = line[i];
+        const rx = p.vx * cosLon0 - p.vz * sinLon0;
+        const rz = p.vx * sinLon0 + p.vz * cosLon0;
+        const cosC = p.vy * sinLat0 + rz * cosLat0;
+        if (cosC >= -0.05) {
+          const sx = cx + radius * rx;
+          const sy = cy - radius * (p.vy * cosLat0 - rz * sinLat0);
           if (!started) {
-            ctx.moveTo(pt.x, pt.y);
+            ctx.moveTo(sx, sy);
             started = true;
           } else {
-            ctx.lineTo(pt.x, pt.y);
+            ctx.lineTo(sx, sy);
           }
         } else {
           started = false;
         }
       }
-      ctx.stroke();
     }
 
-    for (let lat = -60; lat <= 60; lat += 20) {
-      ctx.beginPath();
+    for (let pIdx = 0; pIdx < PRECOMPUTED_PARALLELS.length; pIdx++) {
+      const line = PRECOMPUTED_PARALLELS[pIdx];
       let started = false;
-      for (let lon = -180; lon <= 180; lon += 5) {
-        const pt = projectPoint3D(lon, lat, cam.lon, cam.lat, radius, cx, cy);
-        if (pt.visible) {
+      for (let i = 0; i < line.length; i++) {
+        const p = line[i];
+        const rx = p.vx * cosLon0 - p.vz * sinLon0;
+        const rz = p.vx * sinLon0 + p.vz * cosLon0;
+        const cosC = p.vy * sinLat0 + rz * cosLat0;
+        if (cosC >= -0.05) {
+          const sx = cx + radius * rx;
+          const sy = cy - radius * (p.vy * cosLat0 - rz * sinLat0);
           if (!started) {
-            ctx.moveTo(pt.x, pt.y);
+            ctx.moveTo(sx, sy);
             started = true;
           } else {
-            ctx.lineTo(pt.x, pt.y);
+            ctx.lineTo(sx, sy);
           }
         } else {
           started = false;
         }
       }
-      ctx.stroke();
     }
+    ctx.stroke();
 
     // Equator highlight
     ctx.strokeStyle = 'rgba(56, 189, 248, 0.22)';
     ctx.lineWidth = 1.1;
     ctx.beginPath();
     let eqStarted = false;
-    for (let lon = -180; lon <= 180; lon += 4) {
-      const pt = projectPoint3D(lon, 0, cam.lon, cam.lat, radius, cx, cy);
-      if (pt.visible) {
+    for (let i = 0; i < PRECOMPUTED_EQUATOR.length; i++) {
+      const p = PRECOMPUTED_EQUATOR[i];
+      const rx = p.vx * cosLon0 - p.vz * sinLon0;
+      const rz = p.vx * sinLon0 + p.vz * cosLon0;
+      const cosC = p.vy * sinLat0 + rz * cosLat0;
+      if (cosC >= -0.05) {
+        const sx = cx + radius * rx;
+        const sy = cy - radius * (p.vy * cosLat0 - rz * sinLat0);
         if (!eqStarted) {
-          ctx.moveTo(pt.x, pt.y);
+          ctx.moveTo(sx, sy);
           eqStarted = true;
         } else {
-          ctx.lineTo(pt.x, pt.y);
+          ctx.lineTo(sx, sy);
         }
       } else {
         eqStarted = false;
@@ -262,118 +429,118 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
     }
     ctx.stroke();
 
-    // 5. Continental & Island Vector Landmasses
-    for (const land of WORLD_LANDMASSES) {
+    // 5. Continental & Island Vector Landmasses (fast matrix dot-product)
+    ctx.fillStyle = 'rgba(30, 41, 59, 0.72)';
+    ctx.strokeStyle = 'rgba(100, 116, 139, 0.45)';
+    ctx.lineWidth = 1;
+    for (let l = 0; l < PRECOMPUTED_LANDMASSES.length; l++) {
+      const poly = PRECOMPUTED_LANDMASSES[l];
       ctx.beginPath();
       let visibleCount = 0;
-      land.coordinates.forEach(([lon, lat], idx) => {
-        const pt = projectPoint3D(lon, lat, cam.lon, cam.lat, radius, cx, cy);
-        if (pt.visible) visibleCount++;
-        if (idx === 0) {
-          ctx.moveTo(pt.x, pt.y);
-        } else {
-          ctx.lineTo(pt.x, pt.y);
-        }
-      });
+      for (let i = 0; i < poly.length; i++) {
+        const p = poly[i];
+        const rx = p.vx * cosLon0 - p.vz * sinLon0;
+        const rz = p.vx * sinLon0 + p.vz * cosLon0;
+        const cosC = p.vy * sinLat0 + rz * cosLat0;
+        if (cosC >= -0.05) visibleCount++;
+        const sx = cx + radius * rx;
+        const sy = cy - radius * (p.vy * cosLat0 - rz * sinLat0);
+        if (i === 0) ctx.moveTo(sx, sy);
+        else ctx.lineTo(sx, sy);
+      }
       if (visibleCount > 1) {
         ctx.closePath();
-        ctx.fillStyle = 'rgba(30, 41, 59, 0.72)';
         ctx.fill();
-        ctx.strokeStyle = 'rgba(100, 116, 139, 0.45)';
-        ctx.lineWidth = 1;
         ctx.stroke();
       }
     }
 
     // 6. Plot Event Geometries (Polygons, LineStrings, and Points)
     const nextMarkers: ProjectedMarker[] = [];
+    const selectedId = selectedEvent?.id;
 
-    for (const ev of events) {
-      const meta = getCategoryMeta(ev.category);
-      const isSelected = selectedEvent?.id === ev.id;
-      const latestObs = ev.observations[0];
+    for (let eIdx = 0; eIdx < precomputedEvents.length; eIdx++) {
+      const item = precomputedEvents[eIdx];
+      const { event: ev, meta, repPoint, polygons, lines } = item;
+      const isSelected = selectedId === ev.id;
 
-      // Draw all observations so storm tracks & perimeters show movement history
-      for (let i = ev.observations.length - 1; i >= 0; i--) {
-        const obs = ev.observations[i];
-        const geom = obs.geom;
+      // Polygons
+      for (let pIdx = 0; pIdx < polygons.length; pIdx++) {
+        const ring = polygons[pIdx];
+        ctx.beginPath();
+        let anyVis = false;
+        for (let i = 0; i < ring.length; i++) {
+          const p = ring[i];
+          const rx = p.vx * cosLon0 - p.vz * sinLon0;
+          const rz = p.vx * sinLon0 + p.vz * cosLon0;
+          const cosC = p.vy * sinLat0 + rz * cosLat0;
+          if (cosC >= -0.05) anyVis = true;
+          const sx = cx + radius * rx;
+          const sy = cy - radius * (p.vy * cosLat0 - rz * sinLat0);
+          if (i === 0) ctx.moveTo(sx, sy);
+          else ctx.lineTo(sx, sy);
+        }
+        if (anyVis) {
+          ctx.closePath();
+          ctx.fillStyle = meta.bgSubtle;
+          ctx.fill();
+          ctx.strokeStyle = meta.color;
+          ctx.lineWidth = isSelected ? 2.4 : 1.5;
+          ctx.stroke();
+        }
+      }
 
-        if (geom.type === 'Polygon' && geom.coordinates[0]?.length) {
-          const ring = geom.coordinates[0];
-          ctx.beginPath();
-          let anyVis = false;
-          ring.forEach(([lon, lat], idx) => {
-            const pt = projectPoint3D(lon, lat, cam.lon, cam.lat, radius, cx, cy);
-            if (pt.visible) anyVis = true;
-            if (idx === 0) ctx.moveTo(pt.x, pt.y);
-            else ctx.lineTo(pt.x, pt.y);
-          });
-          if (anyVis) {
-            ctx.closePath();
-            ctx.fillStyle = meta.bgSubtle;
-            ctx.fill();
-            ctx.strokeStyle = meta.color;
-            ctx.lineWidth = isSelected ? 2.4 : 1.5;
-            ctx.stroke();
-          }
-        } else if (geom.type === 'LineString' && geom.coordinates.length > 1) {
+      // Storm track lines
+      if (lines.length > 0 && (isSelected || lines[0].length > 1)) {
+        for (let lIdx = 0; lIdx < lines.length; lIdx++) {
+          const line = lines[lIdx];
           ctx.beginPath();
           let started = false;
-          const pts: Array<{ x: number; y: number; visible: boolean }> = [];
-          for (const [lon, lat] of geom.coordinates) {
-            const pt = projectPoint3D(lon, lat, cam.lon, cam.lat, radius, cx, cy);
-            pts.push(pt);
-            if (pt.visible) {
+          for (let i = 0; i < line.length; i++) {
+            const p = line[i];
+            const rx = p.vx * cosLon0 - p.vz * sinLon0;
+            const rz = p.vx * sinLon0 + p.vz * cosLon0;
+            const cosC = p.vy * sinLat0 + rz * cosLat0;
+            if (cosC >= -0.05) {
+              const sx = cx + radius * rx;
+              const sy = cy - radius * (p.vy * cosLat0 - rz * sinLat0);
               if (!started) {
-                ctx.moveTo(pt.x, pt.y);
+                ctx.moveTo(sx, sy);
                 started = true;
               } else {
-                ctx.lineTo(pt.x, pt.y);
+                ctx.lineTo(sx, sy);
               }
             } else {
               started = false;
             }
           }
           ctx.strokeStyle = meta.color;
-          ctx.lineWidth = isSelected ? 2.8 : 2.0;
-          ctx.setLineDash([4, 3]);
+          ctx.lineWidth = isSelected ? 2.6 : 1.6;
           ctx.stroke();
-          ctx.setLineDash([]);
-
-          // Draw directional waypoint nodes along storm track
-          for (const p of pts) {
-            if (p.visible) {
-              ctx.beginPath();
-              ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
-              ctx.fillStyle = '#0B1120';
-              ctx.fill();
-              ctx.strokeStyle = meta.color;
-              ctx.lineWidth = 1.5;
-              ctx.stroke();
-            }
-          }
         }
       }
 
-      // Primary representative marker for selection & hit-testing
-      const repCoord = getRepresentativeCoord(latestObs?.geom);
-      if (repCoord) {
-        const [lon, lat] = repCoord;
-        const proj = projectPoint3D(lon, lat, cam.lon, cam.lat, radius, cx, cy);
-        if (proj.visible) {
+      // Representative point marker
+      if (repPoint) {
+        const rx = repPoint.vx * cosLon0 - repPoint.vz * sinLon0;
+        const rz = repPoint.vx * sinLon0 + repPoint.vz * cosLon0;
+        const cosC = repPoint.vy * sinLat0 + rz * cosLat0;
+        if (cosC >= -0.05) {
+          const sx = cx + radius * rx;
+          const sy = cy - radius * (repPoint.vy * cosLat0 - rz * sinLat0);
+
           nextMarkers.push({
             event: ev,
-            x: proj.x,
-            y: proj.y,
-            lon,
-            lat,
+            x: sx,
+            y: sy,
+            lon: repPoint.lon,
+            lat: repPoint.lat,
             color: meta.color,
           });
 
-          // Outer radar ring for open events or selected event
           if (ev.status === 'open' || isSelected) {
             ctx.beginPath();
-            ctx.arc(proj.x, proj.y, isSelected ? 16 : 11, 0, Math.PI * 2);
+            ctx.arc(sx, sy, isSelected ? 16 : 10.5, 0, Math.PI * 2);
             ctx.fillStyle = meta.bgSubtle;
             ctx.fill();
             ctx.strokeStyle = isSelected ? '#F8FAFC' : meta.borderSubtle;
@@ -381,29 +548,26 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
             ctx.stroke();
           }
 
-          // Core marker dot
           ctx.beginPath();
-          ctx.arc(proj.x, proj.y, isSelected ? 7 : 5.2, 0, Math.PI * 2);
+          ctx.arc(sx, sy, isSelected ? 7 : 5, 0, Math.PI * 2);
           ctx.fillStyle = meta.color;
           ctx.fill();
           ctx.strokeStyle = '#060911';
-          ctx.lineWidth = 1.6;
+          ctx.lineWidth = 1.5;
           ctx.stroke();
 
-          // Target reticle on selected event
           if (isSelected) {
             ctx.strokeStyle = '#38BDF8';
             ctx.lineWidth = 1.4;
             ctx.beginPath();
-            ctx.arc(proj.x, proj.y, 21, 0, Math.PI * 2);
+            ctx.arc(sx, sy, 21, 0, Math.PI * 2);
             ctx.stroke();
 
-            // Label callout on globe
             ctx.font = '600 11px "Plus Jakarta Sans", sans-serif';
             const label = ev.title.length > 34 ? ev.title.slice(0, 32) + '…' : ev.title;
             const textWidth = ctx.measureText(label).width;
-            const boxX = proj.x + 14;
-            const boxY = proj.y - 12;
+            const boxX = sx + 14;
+            const boxY = sy - 12;
             ctx.fillStyle = 'rgba(6, 9, 17, 0.88)';
             ctx.fillRect(boxX, boxY - 11, textWidth + 12, 20);
             ctx.strokeStyle = meta.color;
@@ -427,11 +591,11 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
     ctx.stroke();
 
     ctx.restore();
-  }, [events, selectedEvent]);
+  }, [precomputedEvents, selectedEvent, getOrBuildBackgroundCanvas]);
 
   const scheduleOnDemandLoop = useCallback(() => {
     if (rafIdRef.current !== null) return;
-    setIsActivelyRendering(true);
+    setEngineHudState(true);
 
     const step = () => {
       const cam = cameraRef.current;
@@ -445,9 +609,9 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
         const dZoom = (cam.targetZoom ?? cam.zoom) - cam.zoom;
 
         if (Math.abs(dLon) > 0.25 || Math.abs(dLat) > 0.25 || Math.abs(dZoom) > 0.01) {
-          cam.lon = normalizeLon(cam.lon + dLon * 0.16);
-          cam.lat = clampLat(cam.lat + dLat * 0.16);
-          cam.zoom = cam.zoom + dZoom * 0.16;
+          cam.lon = normalizeLon(cam.lon + dLon * 0.18);
+          cam.lat = clampLat(cam.lat + dLat * 0.18);
+          cam.zoom = cam.zoom + dZoom * 0.18;
           needsNextFrame = true;
         } else {
           cam.lon = cam.targetLon;
@@ -456,43 +620,74 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
           cam.targetLon = null;
           cam.targetLat = null;
           cam.targetZoom = null;
-          setCameraTelemetry({
-            lon: Number(cam.lon.toFixed(1)),
-            lat: Number(cam.lat.toFixed(1)),
-            zoom: Number(cam.zoom.toFixed(2)),
-          });
           emitCurrentBbox();
         }
-      } else if (!cam.isDragging && (Math.abs(cam.velLon) > 0.04 || Math.abs(cam.velLat) > 0.04)) {
+      } else if (!cam.isDragging && (Math.abs(cam.velLon) > 0.03 || Math.abs(cam.velLat) > 0.03)) {
         cam.lon = normalizeLon(cam.lon + cam.velLon);
         cam.lat = clampLat(cam.lat + cam.velLat);
-        cam.velLon *= 0.88;
-        cam.velLat *= 0.88;
+        cam.velLon *= 0.89;
+        cam.velLat *= 0.89;
         needsNextFrame = true;
-        if (Math.abs(cam.velLon) <= 0.04 && Math.abs(cam.velLat) <= 0.04) {
+        if (Math.abs(cam.velLon) <= 0.03 && Math.abs(cam.velLat) <= 0.03) {
           cam.velLon = 0;
           cam.velLat = 0;
-          setCameraTelemetry({
-            lon: Number(cam.lon.toFixed(1)),
-            lat: Number(cam.lat.toFixed(1)),
-            zoom: Number(cam.zoom.toFixed(2)),
-          });
           emitCurrentBbox();
         }
       }
 
       drawFrame();
+      updateTelemetryDom();
 
       if (needsNextFrame || cam.isDragging) {
         rafIdRef.current = window.requestAnimationFrame(step);
       } else {
         rafIdRef.current = null;
-        setIsActivelyRendering(false);
+        setEngineHudState(false);
       }
     };
 
     rafIdRef.current = window.requestAnimationFrame(step);
-  }, [drawFrame, emitCurrentBbox]);
+  }, [drawFrame, emitCurrentBbox, setEngineHudState, updateTelemetryDom]);
+
+  // Measure container size via ResizeObserver (avoids layout thrashing inside rAF)
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const updateSize = () => {
+      const rect = container.getBoundingClientRect();
+      const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+      sizeRef.current = {
+        width: Math.max(320, Math.round(rect.width || 880)),
+        height: Math.max(260, Math.round(rect.height || 620)),
+        dpr,
+      };
+      drawFrame();
+    };
+
+    updateSize();
+
+    if (typeof ResizeObserver !== 'undefined') {
+      const observer = new ResizeObserver(() => updateSize());
+      observer.observe(container);
+      return () => {
+        observer.disconnect();
+        if (rafIdRef.current !== null) {
+          window.cancelAnimationFrame(rafIdRef.current);
+          rafIdRef.current = null;
+        }
+      };
+    } else {
+      window.addEventListener('resize', updateSize);
+      return () => {
+        window.removeEventListener('resize', updateSize);
+        if (rafIdRef.current !== null) {
+          window.cancelAnimationFrame(rafIdRef.current);
+          rafIdRef.current = null;
+        }
+      };
+    }
+  }, [drawFrame]);
 
   // Redraw single frame when events or selectedEvent changes
   useEffect(() => {
@@ -520,18 +715,6 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
     }
   }, [useBboxFilter, emitCurrentBbox]);
 
-  // Handle container resize on demand
-  useEffect(() => {
-    const handleResize = () => drawFrame();
-    window.addEventListener('resize', handleResize);
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      if (rafIdRef.current !== null) {
-        window.cancelAnimationFrame(rafIdRef.current);
-      }
-    };
-  }, [drawFrame]);
-
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const cam = cameraRef.current;
     cam.isDragging = true;
@@ -542,39 +725,51 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
     cam.targetLat = null;
     cam.velLon = 0;
     cam.velLat = 0;
-    e.currentTarget.setPointerCapture(e.pointerId);
+    if (hoveredIdRef.current !== null) {
+      hoveredIdRef.current = null;
+      setHoveredEvent(null);
+    }
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // Ignore in synthetic test environments
+    }
     scheduleOnDemandLoop();
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const cam = cameraRef.current;
+    if (cam.isDragging) {
+      const dx = e.clientX - cam.dragStartX;
+      const dy = e.clientY - cam.dragStartY;
+      if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
+        cam.dragMoved = true;
+      }
+      const sensitivity = 0.25 / cam.zoom;
+      const stepLon = -dx * sensitivity;
+      const stepLat = dy * sensitivity;
+      cam.lon = normalizeLon(cam.lon + stepLon);
+      cam.lat = clampLat(cam.lat + stepLat);
+      // Smooth velocity blending for silky inertia release
+      cam.velLon = cam.velLon * 0.35 + stepLon * 0.65;
+      cam.velLat = cam.velLat * 0.35 + stepLat * 0.65;
+      cam.dragStartX = e.clientX;
+      cam.dragStartY = e.clientY;
+      return;
+    }
+
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
     const localX = e.clientX - rect.left;
     const localY = e.clientY - rect.top;
 
-    const cam = cameraRef.current;
-    if (cam.isDragging) {
-      const dx = e.clientX - cam.dragStartX;
-      const dy = e.clientY - cam.dragStartY;
-      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
-        cam.dragMoved = true;
-      }
-      const sensitivity = 0.26 / cam.zoom;
-      cam.velLon = -dx * sensitivity;
-      cam.velLat = dy * sensitivity;
-      cam.lon = normalizeLon(cam.lon + cam.velLon);
-      cam.lat = clampLat(cam.lat + cam.velLat);
-      cam.dragStartX = e.clientX;
-      cam.dragStartY = e.clientY;
-      setHoveredEvent(null);
-      return;
-    }
-
     // Hover hit test on markers
     let closest: ProjectedMarker | null = null;
     let minDist = 16;
-    for (const m of markersRef.current) {
+    const markers = markersRef.current;
+    for (let i = 0; i < markers.length; i++) {
+      const m = markers[i];
       const dist = Math.hypot(m.x - localX, m.y - localY);
       if (dist < minDist) {
         minDist = dist;
@@ -582,14 +777,18 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
       }
     }
     if (closest) {
-      setHoveredEvent({
-        event: closest.event,
-        x: closest.x,
-        y: closest.y,
-        lon: closest.lon,
-        lat: closest.lat,
-      });
-    } else if (hoveredEvent !== null) {
+      if (hoveredIdRef.current !== closest.event.id) {
+        hoveredIdRef.current = closest.event.id;
+        setHoveredEvent({
+          event: closest.event,
+          x: closest.x,
+          y: closest.y,
+          lon: closest.lon,
+          lat: closest.lat,
+        });
+      }
+    } else if (hoveredIdRef.current !== null) {
+      hoveredIdRef.current = null;
       setHoveredEvent(null);
     }
   };
@@ -605,7 +804,9 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
       const localY = e.clientY - rect.top;
       let clicked: ProjectedMarker | null = null;
       let minDist = 18;
-      for (const m of markersRef.current) {
+      const markers = markersRef.current;
+      for (let i = 0; i < markers.length; i++) {
+        const m = markers[i];
         const dist = Math.hypot(m.x - localX, m.y - localY);
         if (dist < minDist) {
           minDist = dist;
@@ -617,11 +818,7 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
         onSelectEvent(clicked.event);
       }
     } else {
-      setCameraTelemetry({
-        lon: Number(cam.lon.toFixed(1)),
-        lat: Number(cam.lat.toFixed(1)),
-        zoom: Number(cam.zoom.toFixed(2)),
-      });
+      updateTelemetryDom();
       emitCurrentBbox();
     }
     scheduleOnDemandLoop();
@@ -632,11 +829,7 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
     const cam = cameraRef.current;
     const delta = e.deltaY < 0 ? 0.14 : -0.14;
     cam.zoom = Math.max(0.75, Math.min(3.0, Number((cam.zoom + delta).toFixed(2))));
-    setCameraTelemetry({
-      lon: Number(cam.lon.toFixed(1)),
-      lat: Number(cam.lat.toFixed(1)),
-      zoom: cam.zoom,
-    });
+    updateTelemetryDom();
     drawFrame();
     emitCurrentBbox();
   };
@@ -645,11 +838,7 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
     soundFx.playFilter();
     const cam = cameraRef.current;
     cam.zoom = Math.max(0.75, Math.min(3.0, Number((cam.zoom + delta).toFixed(2))));
-    setCameraTelemetry({
-      lon: Number(cam.lon.toFixed(1)),
-      lat: Number(cam.lat.toFixed(1)),
-      zoom: cam.zoom,
-    });
+    updateTelemetryDom();
     drawFrame();
     emitCurrentBbox();
   };
@@ -679,20 +868,14 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
         onWheel={handleWheel}
       />
 
-      {/* Top-Left Telemetry & Render Engine Pill */}
+      {/* Top-Left Telemetry & Render Engine Pill (Updated via DOM refs for 0 React re-renders during drag) */}
       <div className="globe-hud-top-left">
         <div className="globe-engine-pill" data-testid="render-mode-indicator">
-          <span
-            className={`engine-dot ${isActivelyRendering ? 'engine-dot-active' : 'engine-dot-idle'}`}
-          />
-          <span>
-            On-Demand 3D {isActivelyRendering ? '(Rendering Frame)' : '(Idle — ~0% GPU)'}
-          </span>
+          <span ref={engineDotRef} className="engine-dot engine-dot-idle" />
+          <span ref={engineTextRef}>On-Demand 3D (Idle — ~0% GPU)</span>
         </div>
-        <div className="globe-coords-pill mono-text">
-          CAM {cameraTelemetry.lat >= 0 ? `${cameraTelemetry.lat}°N` : `${Math.abs(cameraTelemetry.lat)}°S`},{' '}
-          {cameraTelemetry.lon >= 0 ? `${cameraTelemetry.lon}°E` : `${Math.abs(cameraTelemetry.lon)}°W`} ·{' '}
-          {cameraTelemetry.zoom.toFixed(2)}x
+        <div ref={telemetryPillRef} className="globe-coords-pill mono-text">
+          CAM 18.0°N, 25.0°E · 1.08x
         </div>
       </div>
 

@@ -117,20 +117,39 @@ export const App: React.FC = () => {
     setSoundEnabled(next);
   };
 
+  const latestBboxRef = React.useRef<[number, number, number, number]>(INITIAL_FILTERS.bbox!);
+  const bboxDebounceRef = React.useRef<number | null>(null);
+
   const handleViewportBboxChange = useCallback((nextBbox: [number, number, number, number]) => {
+    latestBboxRef.current = nextBbox;
     setFilters((prev) => {
+      // Never trigger a state update or API refetch when bbox filtering is off
       if (!prev.useBbox) {
-        return { ...prev, bbox: nextBbox };
+        return prev;
       }
       const same =
         prev.bbox &&
-        prev.bbox[0] === nextBbox[0] &&
-        prev.bbox[1] === nextBbox[1] &&
-        prev.bbox[2] === nextBbox[2] &&
-        prev.bbox[3] === nextBbox[3];
+        Math.abs(prev.bbox[0] - nextBbox[0]) < 0.5 &&
+        Math.abs(prev.bbox[1] - nextBbox[1]) < 0.5 &&
+        Math.abs(prev.bbox[2] - nextBbox[2]) < 0.5 &&
+        Math.abs(prev.bbox[3] - nextBbox[3]) < 0.5;
       if (same) return prev;
       return { ...prev, bbox: nextBbox };
     });
+  }, []);
+
+  const handleChangeFilters = useCallback((nextFilters: EventFilters) => {
+    if (bboxDebounceRef.current !== null) {
+      window.clearTimeout(bboxDebounceRef.current);
+      bboxDebounceRef.current = null;
+    }
+    // If user just enabled useBbox, attach the latest camera bbox immediately
+    if (nextFilters.useBbox && !nextFilters.bbox) {
+      nextFilters = { ...nextFilters, bbox: latestBboxRef.current };
+    } else if (nextFilters.useBbox) {
+      nextFilters = { ...nextFilters, bbox: latestBboxRef.current };
+    }
+    setFilters(nextFilters);
   }, []);
 
   return (
@@ -162,7 +181,7 @@ export const App: React.FC = () => {
 
       <FilterBar
         filters={filters}
-        onChangeFilters={setFilters}
+        onChangeFilters={handleChangeFilters}
         onResetFilters={() => setFilters(INITIAL_FILTERS)}
         totalCount={events.length}
         liteMode={liteMode}
