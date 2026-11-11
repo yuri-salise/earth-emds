@@ -26,15 +26,10 @@ earth-emds/
 │   ├── data/
 │   │   └── ne_10m_admin_0_countries/ # Versioned Natural Earth Admin 0 dataset
 │   ├── app/
-│   │   ├── main.py                   # FastAPI app, CORS, security headers, read-only routers
+│   │   ├── main.py                   # FastAPI app, CORS, rate limiting, endpoints & routers
 │   │   ├── config.py                 # Pydantic Settings (.env loader)
-│   │   ├── db.py                     # Async SQLAlchemy / asyncpg connection pool
+│   │   ├── db.py                     # SQLite WAL / PostGIS connection pool and query engine
 │   │   ├── cache.py                  # Redis cache & NewsAPI daily quota counter
-│   │   ├── models/                   # SQLAlchemy + GeoAlchemy2 physical tables
-│   │   ├── schemas/                  # Pydantic v2 request/response contracts
-│   │   ├── api/v1/
-│   │   │   ├── events.py             # GET /api/v1/events, /events/{id}, /events/{id}/articles
-│   │   │   └── health.py             # GET /api/v1/health (provider freshness & sync status)
 │   │   ├── adapters/
 │   │   │   ├── eonet.py              # NASA EONET v3 client (timeouts + jittered retries)
 │   │   │   ├── rest_countries.py     # REST Countries v3.1 client (/alpha batch lookup)
@@ -45,7 +40,7 @@ earth-emds/
 │   │   │   ├── demographics.py       # Population density math & zero/null area guards
 │   │   │   └── scorer.py             # Rule-based NewsAPI candidate scoring (algorithm_version 1)
 │   │   └── worker/
-│   │       └── scheduler.py          # 10-min ingestion pipeline & sync_run logger
+│   │       └── scheduler.py / __main__.py # 10-min ingestion pipeline & sync_run logger
 │   └── tests/
 │       ├── unit/                     # Fast TDD unit tests (normalizer, scorer, density, schemas)
 │       ├── contract/                 # Adapter contract tests with recorded JSON fixtures
