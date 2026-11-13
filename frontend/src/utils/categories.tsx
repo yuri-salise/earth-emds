@@ -215,20 +215,54 @@ export const FILTER_CATEGORIES: Array<{ id: string; label: string }> = [
   { id: 'seaLakeIce', label: 'Sea & Lake Ice' },
 ];
 
+const CATEGORY_ALIAS_LOOKUP: Record<string, string> = {
+  wildfires: 'wildfires',
+  wildfire: 'wildfires',
+  severestorms: 'severeStorms',
+  severestorm: 'severeStorms',
+  volcanoes: 'volcanoes',
+  volcano: 'volcanoes',
+  floods: 'floods',
+  flood: 'floods',
+  sealakeice: 'seaLakeIce',
+  seaandlakeice: 'seaLakeIce',
+  earthquakes: 'earthquakes',
+  earthquake: 'earthquakes',
+  landslides: 'landslides',
+  landslide: 'landslides',
+  drought: 'drought',
+  dusthaze: 'dustHaze',
+  tempextremes: 'tempExtremes',
+};
+
 export function getCategoryMeta(categoryRaw: string): CategoryMeta {
   const normalized = (categoryRaw || '').trim();
   if (CATEGORY_MAP[normalized]) {
     return CATEGORY_MAP[normalized];
   }
+  const clean = normalized.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const aliasId = CATEGORY_ALIAS_LOOKUP[clean];
+  if (aliasId && CATEGORY_MAP[aliasId]) {
+    return CATEGORY_MAP[aliasId];
+  }
   const lower = normalized.toLowerCase();
   if (lower.includes('wildfire') || lower.includes('fire')) return CATEGORY_MAP.wildfires;
-  if (lower.includes('storm') || lower.includes('cyclone') || lower.includes('typhoon'))
+  if (
+    lower.includes('storm') ||
+    lower.includes('cyclone') ||
+    lower.includes('typhoon') ||
+    lower.includes('hurricane')
+  )
     return CATEGORY_MAP.severeStorms;
   if (lower.includes('volcan')) return CATEGORY_MAP.volcanoes;
   if (lower.includes('flood')) return CATEGORY_MAP.floods;
-  if (lower.includes('ice')) return CATEGORY_MAP.seaLakeIce;
+  if (lower.includes('ice') || lower.includes('glacier') || lower.includes('cryo'))
+    return CATEGORY_MAP.seaLakeIce;
+  if (lower.includes('quake') || lower.includes('seismic')) return CATEGORY_MAP.earthquakes;
+  if (lower.includes('landslide')) return CATEGORY_MAP.landslides;
+  if (lower.includes('drought')) return CATEGORY_MAP.drought;
   return {
-    id: normalized || 'earthquakes',
+    id: clean || 'earthquakes',
     label: normalized || 'Seismic / Other',
     shortLabel: normalized || 'Hazard',
     color: '#A855F7',
@@ -236,6 +270,13 @@ export function getCategoryMeta(categoryRaw: string): CategoryMeta {
     borderSubtle: 'rgba(168, 85, 247, 0.38)',
     Icon: SeismicPulseIcon,
   };
+}
+
+export function isCategoryMatch(eventCategory: string, filterCategory: string): boolean {
+  if (!filterCategory || filterCategory === 'all') return true;
+  const eventMeta = getCategoryMeta(eventCategory);
+  const filterMeta = getCategoryMeta(filterCategory);
+  return eventMeta.id === filterMeta.id;
 }
 
 /**

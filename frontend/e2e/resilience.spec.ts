@@ -18,7 +18,7 @@ test.describe('Upstream Outage Resilience & Secret Isolation (FR-12, NFR-03, NFR
     });
 
     // Simulate degraded/offline upstream API so cached snapshot banner activates
-    await page.route('**/api/v1/health', async (route) => {
+    await page.route(/\/api\/v1\/health/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',

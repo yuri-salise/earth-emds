@@ -75,6 +75,32 @@ describe('EARTH EMDS Frontend Application & Components', () => {
     expect(
       screen.getByText(/Valparaíso & Biobío Forest Wildfires, Central Chile/i)
     ).toBeInTheDocument();
+
+    // Reset status to all
+    const allStatusBtn = screen.getByTestId('status-filter-all');
+    fireEvent.click(allStatusBtn);
+
+    // Filter by Severe Storms category
+    const stormBtn = screen.getByTestId('category-filter-severeStorms');
+    fireEvent.click(stormBtn);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('showing-events-count')).toHaveTextContent('Showing 1 event');
+    });
+    expect(
+      screen.getByText(/Super Typhoon Kristine \(Western Pacific Track\)/i)
+    ).toBeInTheDocument();
+
+    // Filter by Sea & Lake Ice category
+    const iceBtn = screen.getByTestId('category-filter-seaLakeIce');
+    fireEvent.click(iceBtn);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('showing-events-count')).toHaveTextContent('Showing 1 event');
+    });
+    expect(
+      screen.getByText(/Iceberg A-83 Drift Anomaly in Open Southern Ocean/i)
+    ).toBeInTheDocument();
   });
 
   it('supports keyboard navigation (ArrowDown / Enter / Escape) on the EventSidebarList and opens the EventDetailDrawer', async () => {

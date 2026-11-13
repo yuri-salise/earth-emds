@@ -10,7 +10,7 @@ import {
   MatchedCountry,
   ScoredArticle,
 } from '../types/domain';
-import { getRepresentativeCoord } from '../utils/categories';
+import { getCategoryMeta, getRepresentativeCoord, isCategoryMatch } from '../utils/categories';
 import { FALLBACK_ARTICLES_BY_EVENT, FALLBACK_EVENTS, FALLBACK_HEALTH } from './fallbackData';
 
 const DEFAULT_API_BASE_URL = 'http://127.0.0.1:8000/api/v1';
@@ -233,7 +233,7 @@ export function filterEventsClientSide(
 ): HazardEvent[] {
   return events.filter((ev) => {
     if (filters.category && filters.category !== 'all') {
-      if (ev.category.toLowerCase() !== filters.category.toLowerCase()) {
+      if (!isCategoryMatch(ev.category, filters.category)) {
         return false;
       }
     }
@@ -246,7 +246,10 @@ export function filterEventsClientSide(
       const qLower = filters.q.trim().toLowerCase();
       const inTitle = ev.title.toLowerCase().includes(qLower);
       const inId = ev.id.toLowerCase().includes(qLower);
-      const inCategory = ev.category.toLowerCase().includes(qLower);
+      const inCategory =
+        ev.category.toLowerCase().includes(qLower) ||
+        getCategoryMeta(ev.category).label.toLowerCase().includes(qLower) ||
+        getCategoryMeta(ev.category).id.toLowerCase().includes(qLower);
       const inCountries = ev.countries.some(
         (c) =>
           c.name.toLowerCase().includes(qLower) ||
