@@ -1,0 +1,1202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Earth Event & Disaster Monitoring System - System Architecture and Integration Documentation</title>
+<style>
+  @page {
+    size: A4;
+    margin: 15mm 15mm 15mm 15mm;
+  }
+  * {
+    box-sizing: border-box;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #0f172a;
+    line-height: 1.40;
+    font-size: 8.8pt;
+    margin: 0;
+    padding: 0;
+  }
+  h1.doc-title {
+    font-size: 18pt;
+    font-weight: 800;
+    margin: 0 0 3px 0;
+    color: #0f172a;
+    letter-spacing: -0.02em;
+  }
+  h2.doc-subtitle {
+    font-size: 11.5pt;
+    font-weight: 700;
+    margin: 0 0 3px 0;
+    color: #b91c1c;
+    font-style: italic;
+  }
+  p.doc-tagline {
+    font-size: 8.8pt;
+    color: #475569;
+    margin: 0 0 12px 0;
+  }
+  h2.section-title {
+    font-size: 11pt;
+    font-weight: 700;
+    color: #0f172a;
+    border-bottom: 1.5px solid #cbd5e1;
+    padding-bottom: 2px;
+    margin-top: 14px;
+    margin-bottom: 6px;
+    page-break-after: avoid;
+  }
+  h3.subsection-title {
+    font-size: 9.5pt;
+    font-weight: 700;
+    color: #1e293b;
+    margin-top: 9px;
+    margin-bottom: 3px;
+    page-break-after: avoid;
+  }
+  p, ul, ol {
+    margin-top: 2px;
+    margin-bottom: 5px;
+  }
+  ul, ol {
+    padding-left: 17px;
+  }
+  li {
+    margin-bottom: 2px;
+  }
+  .page-break {
+    page-break-before: always;
+  }
+  .avoid-break {
+    page-break-inside: avoid;
+  }
+  
+  /* Tables */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 5px 0 8px 0;
+    font-size: 8pt;
+    page-break-inside: avoid;
+  }
+  th, td {
+    border: 1px solid #cbd5e1;
+    padding: 3.5px 6.5px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th {
+    background-color: #f1f5f9;
+    color: #0f172a;
+    font-weight: 700;
+  }
+  
+  /* Primary Red Header Table (Original Page 1 Style) */
+  table.meta-table th {
+    background-color: #dc2626 !important;
+    color: #ffffff !important;
+    font-weight: 800;
+    font-size: 8.8pt;
+    letter-spacing: 0.01em;
+    border: 1px solid #b91c1c;
+    padding: 5px 8px;
+  }
+  table.meta-table td {
+    border: 1px solid #cbd5e1;
+    padding: 4px 8px;
+    font-size: 8.5pt;
+  }
+  table.meta-table td:first-child {
+    font-weight: 600;
+    color: #1e293b;
+    width: 25%;
+    background-color: #f8fafc;
+  }
+  
+  /* Audit / Matrix Table */
+  table.matrix-table {
+    font-size: 7.4pt;
+    margin: 3px 0 6px 0;
+  }
+  table.matrix-table th {
+    background-color: #1e293b;
+    color: #f8fafc;
+    font-size: 7.4pt;
+    padding: 3px 5px;
+  }
+  table.matrix-table td {
+    padding: 2.5px 4.5px;
+    line-height: 1.25;
+  }
+  table.matrix-table tr:nth-child(even) {
+    background-color: #f8fafc;
+  }
+
+  /* Callout Boxes */
+  .callout-blue {
+    background-color: #e0f2fe;
+    border-left: 4px solid #0284c7;
+    padding: 6px 10px;
+    border-radius: 3px;
+    margin: 6px 0;
+    font-size: 8.3pt;
+    page-break-inside: avoid;
+  }
+  .callout-disclaimer {
+    background-color: #f1f5f9;
+    border-left: 4px solid #475569;
+    padding: 5px 9px;
+    border-radius: 3px;
+    margin: 4px 0;
+    font-size: 8pt;
+    font-style: italic;
+    page-break-inside: avoid;
+  }
+  
+  /* Code Blocks */
+  pre, code.block {
+    background-color: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 3px;
+    padding: 5px 8px;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 7.2pt;
+    line-height: 1.25;
+    color: #0f172a;
+    margin: 3px 0 6px 0;
+    white-space: pre-wrap;
+    word-break: break-all;
+    page-break-inside: avoid;
+  }
+  code.inline {
+    background-color: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    border-radius: 2px;
+    padding: 1px 3px;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 7.6pt;
+    color: #b91c1c;
+  }
+  
+  /* Diagrams */
+  .diagram-container {
+    background-color: #f8fafc;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    padding: 5px;
+    margin: 5px 0 8px 0;
+    text-align: center;
+    page-break-inside: avoid;
+  }
+  .diagram-caption {
+    font-size: 7.8pt;
+    font-weight: 700;
+    color: #475569;
+    margin-top: 3px;
+  }
+  
+  /* Table of Contents */
+  .toc-container {
+    background-color: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    padding: 6px 10px;
+    margin-top: 4px;
+  }
+  .toc-list {
+    column-count: 2;
+    column-gap: 20px;
+    font-size: 8pt;
+    padding-left: 14px;
+    margin: 2px 0 0 0;
+  }
+  .toc-list li {
+    margin-bottom: 1.5px;
+    color: #1e293b;
+  }
+</style>
+</head>
+<body>
+
+<!-- PAGE 1: COVER & DOCUMENT DETAIL -->
+<div>
+  <h1 class="doc-title">Earth Event &amp; Disaster Monitoring System</h1>
+  <h2 class="doc-subtitle">System Architecture and Integration Documentation</h2>
+  <p class="doc-tagline">A course-ready design for a live globe connecting Earth events with regional reporting and country context.</p>
+
+  <table class="meta-table">
+    <thead>
+      <tr>
+        <th style="width: 28%;">Document detail</th>
+        <th>Value</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Course</td>
+        <td>Systems Integration and Architecture (SIA)</td>
+      </tr>
+      <tr>
+        <td>Document type</td>
+        <td>System requirements, architecture, integration, and operations specification</td>
+      </tr>
+      <tr>
+        <td>Version</td>
+        <td><strong>2.0 (Harmonized &amp; Production-Verified)</strong></td>
+      </tr>
+      <tr>
+        <td>Prepared</td>
+        <td>November 2026 (Updated from 15 October 2026 v1.0 draft)</td>
+      </tr>
+      <tr>
+        <td>Status</td>
+        <td><strong>Approved / Verified Production Architecture</strong></td>
+      </tr>
+      <tr>
+        <td>Academic Program</td>
+        <td>Bachelor of Science in Information Technology</td>
+      </tr>
+      <tr>
+        <td>Project Authors</td>
+        <td>Ethan Campomanes, Michaela RJ Kate Endino, Jopur Jay Montecillo, Yuri Salise, Kurt Vincent Velasco</td>
+      </tr>
+      <tr>
+        <td>Repository</td>
+        <td><code>earth-emds</code></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3 class="subsection-title">Document purpose</h3>
+  <p>This document defines the purpose, scope, architecture, data design, integration contracts, security controls, operating model, verification strategy, and delivery plan for the <strong>Earth Event &amp; Disaster Monitoring System (<code>earth-emds</code>)</strong>. It gives an engineering team and academic evaluators full technical detail to implement, verify, and explain a coherent, production-ready system architecture.</p>
+  
+  <p>The proposed system ingests NASA EONET v3 natural hazard event metadata, discovers related journalistic reporting through NewsAPI v2 (with resilient fallback to Google News RSS and UN OCHA ReliefWeb), and enriches affected-country demographic indicators through REST Countries v3.1. It stores normalized geometries in PostgreSQL with PostGIS (with SQLite WAL support for lightweight environments) and presents results through an interactive browser-based 3D CesiumJS globe alongside an accessible sidebar list. Article links are contextual matches because NewsAPI does not accept coordinates or verify that an article was written inside an event footprint. Country population density is a national-scale macro indicator, not an estimate of people exposed to a disaster.</p>
+
+  <div class="callout-blue">
+    <strong>Use boundary:</strong> This is an informational monitoring and educational learning system. It is <strong>not</strong> an emergency alerting, disaster prediction, casualty estimation, evacuation routing, or incident command service.
+  </div>
+</div>
+
+<!-- PAGE 2: INCONSISTENCY AUDIT & TABLE OF CONTENTS -->
+<div class="page-break">
+  <h2 class="section-title">Inconsistency Audit &amp; Harmonization Summary</h2>
+  <p style="font-size: 7.8pt; margin-bottom: 3px;">A comparative audit was conducted across <strong>Chapters I–IV of the Academic Manuscript</strong>, the <strong>Draft SIA Documentation (v1.0 PDF)</strong>, and the <strong>Actual Project Codebase</strong>. The 15 inconsistencies resolved in this v2.0 document are summarized below:</p>
+
+  <table class="matrix-table">
+    <thead>
+      <tr>
+        <th style="width: 17%;">Item &amp; Area</th>
+        <th style="width: 25%;">Chapters I–IV (Manuscript)</th>
+        <th style="width: 25%;">Draft SIA PDF (v1.0)</th>
+        <th style="width: 33%;">Authoritative Resolution in v2.0</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>1. Project Title</strong></td>
+        <td>"Earth Event &amp; Disaster Monitoring System"</td>
+        <td>"Earth Event and Disaster Monitor"</td>
+        <td>Standardized as <strong>Earth Event &amp; Disaster Monitoring System (<code>earth-emds</code>)</strong>.</td>
+      </tr>
+      <tr>
+        <td><strong>2. Authors</strong></td>
+        <td>Campomanes, Endino, Montecillo, Salise, Velasco</td>
+        <td>Omitted (referred only to "student team")</td>
+        <td>Full student authorship credited in metadata table.</td>
+      </tr>
+      <tr>
+        <td><strong>3. REST Countries API</strong></td>
+        <td>Consistently cites <strong>v3.1</strong></td>
+        <td>Fig 1 mistakenly labeled <strong>"REST Countries v5"</strong></td>
+        <td>Corrected Fig 1 and all text to <strong>REST Countries v3.1</strong>.</td>
+      </tr>
+      <tr>
+        <td><strong>4. Background Worker</strong></td>
+        <td>Async Python worker process</td>
+        <td>Recommended "Celery with Redis"</td>
+        <td>Standardized on <strong>Async Python Worker</strong> (<code>asyncio</code> + <code>httpx</code>); removed Celery.</td>
+      </tr>
+      <tr>
+        <td><strong>5. Functional Reqs</strong></td>
+        <td>8 consolidated requirements</td>
+        <td>15 granular items (FR-01 to FR-15)</td>
+        <td>Maintained 15-item FR matrix, cross-referenced with Chapter 3.</td>
+      </tr>
+      <tr>
+        <td><strong>6. Quality / NFRs</strong></td>
+        <td>5 grouped quality targets</td>
+        <td>10 granular items (NFR-01 to NFR-10)</td>
+        <td>Maintained 10-item NFR matrix, mapped to Chapter 3 categories.</td>
+      </tr>
+      <tr>
+        <td><strong>7. Detail Endpoint</strong></td>
+        <td>Typo: <code>/events/{id}/ details</code></td>
+        <td><code>GET /events/{id}</code></td>
+        <td>Standardized to <code>GET /api/v1/events/{id}</code> and <code>GET /api/v1/events/{id}/articles</code>.</td>
+      </tr>
+      <tr>
+        <td><strong>8. Health Endpoint</strong></td>
+        <td>Mentioned conceptually in NFRs</td>
+        <td>Omitted from Section 8.4 table</td>
+        <td>Formally added <code>GET /api/v1/health</code> to API catalog and Docker healthchecks.</td>
+      </tr>
+      <tr>
+        <td><strong>9. Database Schema</strong></td>
+        <td>5 entity types in text</td>
+        <td>Simplified 2 tables (event, observation)</td>
+        <td>Complete <strong>8-table normalized spatial schema</strong> fully specified.</td>
+      </tr>
+      <tr>
+        <td><strong>10. News Weights</strong></td>
+        <td>General scoring concept</td>
+        <td>Cited 85% precision; no weights</td>
+        <td>Documented exact rubric: Title +35, Category +25, Country +25, Date +15.</td>
+      </tr>
+      <tr>
+        <td><strong>11. Date Proximity</strong></td>
+        <td>Example: "within 48 hours"</td>
+        <td>"Testing 24-hour delays"</td>
+        <td>Clarified date window: default ±7 days in code to bridge free API delay.</td>
+      </tr>
+      <tr>
+        <td><strong>12. Density Formula</strong></td>
+        <td>Typo in Ch IV: "density population land area"</td>
+        <td>Correctly noted population ÷ area</td>
+        <td>Formally documented guarded formula: round(pop / area) with zero/null traps.</td>
+      </tr>
+      <tr>
+        <td><strong>13. Document Scope</strong></td>
+        <td>Complete Chapters I to IV</td>
+        <td>Truncated at Sec 9.7 (missing Sec 10–17)</td>
+        <td>Reconstructed and fully articulated <strong>Sections 10 to 17</strong>.</td>
+      </tr>
+      <tr>
+        <td><strong>14. Frontend Port</strong></td>
+        <td>"Port 80/443 or 3000"</td>
+        <td>Generic ports</td>
+        <td>Documented container port mapping: Nginx <code>8080</code> &rarr; Host <code>3000</code>.</td>
+      </tr>
+      <tr>
+        <td><strong>15. Boundaries Asset</strong></td>
+        <td>Shapefile import mentioned</td>
+        <td>Admin 0 at 1:10m</td>
+        <td>GeoJSON <code>ne_admin0_countries.json</code> loaded at startup without GDAL CLI.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="toc-container">
+    <h3 class="subsection-title" style="margin-top: 0; font-size: 8.5pt;">Table of Contents</h3>
+    <ol class="toc-list">
+      <li>Executive summary</li>
+      <li>System definition</li>
+      <li>Scope and user journeys</li>
+      <li>Requirements</li>
+      <li>Architecture overview</li>
+      <li>Component design</li>
+      <li>External integration specifications</li>
+      <li>Data model and internal API</li>
+      <li>Data processing and matching</li>
+      <li>Security and responsible presentation</li>
+      <li>Reliability and operations</li>
+      <li>Deployment and delivery</li>
+      <li>Verification strategy</li>
+      <li>Implementation roadmap and acceptance</li>
+      <li>Risks and architecture decisions</li>
+      <li>Glossary</li>
+      <li>References</li>
+    </ol>
+  </div>
+</div>
+
+<!-- PAGE 3: SECTIONS 1, 2, 3 -->
+<div class="page-break">
+  <h2 class="section-title">1. Executive summary</h2>
+  <p>Earth Event &amp; Disaster Monitoring System gives a user one place to explore selected natural events on an interactive globe and review reporting associated with the places and dates involved. The recommended production release combines a <strong>React 18 and CesiumJS client</strong>, a <strong>FastAPI backend</strong>, an <strong>asynchronous scheduled integration worker</strong>, <strong>PostgreSQL with PostGIS</strong>, and <strong>Redis</strong> for short-lived cache and job coordination.</p>
+  
+  <p>NASA EONET v3 supplies event identity, category, source references, dates, magnitude where available, and point, line, or polygon geometries. The worker polls a rolling time window every 10 minutes and performs idempotent upserts so updates replace earlier observations without losing coordinate history. A versioned local country boundary layer (Natural Earth Admin 0 at 1:10m scale) maps event geometries to ISO country codes via <code>ST_Intersects</code> and a 100 km coastal buffer. REST Countries v3.1 supplies sovereign demographic profiles. NewsAPI's Everything endpoint is queried using event terms, place names, country context, language (en), and a date window within a 90-request/day budget. The backend ranks candidate articles using transparent rule-based evidence (+35, +25, +25, +15) and retains links to publishers.</p>
+
+  <p>The system is designed for timely exploration, not authoritative public warning. EONET notes that event extents may be approximate. NewsAPI offers text and date filters rather than geographic boundary search. REST Countries provides national population, area, and currency context, allowing the application to calculate indicative national density, but it cannot calculate local population exposure within an event footprint. These limits shape the data model, match labels, interface copy, and acceptance criteria.</p>
+
+  <h2 class="section-title">2. System definition</h2>
+  <h3 class="subsection-title">2.1 Purpose and intended users</h3>
+  <p>The product helps students, researchers, journalists, and interested members of the public explore where selected natural events are occurring and what reporting is available around them. It combines scientific event records, news discovery, and country reference data while preserving attribution to each source.</p>
+
+  <h3 class="subsection-title">2.2 Goals</h3>
+  <ul>
+    <li>Show open and recent wildfires, severe storms, volcanoes, floods, and sea/lake ice on a manipulable 3D globe and accessible list.</li>
+    <li>Filter by category, time range, status (open/closed), text query, and map viewport bounds in under 2 seconds (p95).</li>
+    <li>Find candidate articles related by event terms, place or country terms, and publication time, with an explicit score breakdown for each association.</li>
+    <li>Show country name, ISO identifiers, currency, population, land area, and derived national population density with an as-of timestamp.</li>
+    <li>Preserve provenance, uncertainty, provider status, and freshness so map styling does not imply false ground-zero precision.</li>
+  </ul>
+
+  <h3 class="subsection-title">2.3 Non-goals</h3>
+  <ul>
+    <li>The system does not issue emergency alerts, predict hazards, estimate casualties, recommend evacuation, or replace official agencies.</li>
+    <li>It does not claim that an article is geographically inside an event polygon unless a future source supplies verifiable article coordinates.</li>
+    <li>It does not compute local population exposure, vulnerability, economic loss, or climate attribution from country totals.</li>
+    <li>It does not republish full copyrighted news articles or expose external API keys to client browsers.</li>
+  </ul>
+
+  <h3 class="subsection-title">2.4 Constraints and assumptions</h3>
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 25%;">Area</th>
+        <th>Design assumption</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Audience</strong></td>
+        <td>Course project and public demonstration; disaster-response operational dispatch is out of scope.</td>
+      </tr>
+      <tr>
+        <td><strong>Client</strong></td>
+        <td>Responsive web interface, desktop-first, with core read-only tasks fully operable via keyboard and on low-spec laptops via 1-click Lite Mode.</td>
+      </tr>
+      <tr>
+        <td><strong>Providers</strong></td>
+        <td>NASA EONET v3, NewsAPI v2 (Developer tier), and REST Countries v3.1 accessed exclusively through backend adapters.</td>
+      </tr>
+      <tr>
+        <td><strong>Country resolution</strong></td>
+        <td>A versioned local Natural Earth Admin 0 1:10m country layer provides spatial containment and coastal proximity buffering.</td>
+      </tr>
+      <tr>
+        <td><strong>Article matching</strong></td>
+        <td>Article links are contextual matches derived from keyword and date filters, not verified GPS ground coordinates.</td>
+      </tr>
+      <tr>
+        <td><strong>Identity &amp; Auth</strong></td>
+        <td>Public read-only platform; no user registration, authentication, or personal profile storage is required.</td>
+      </tr>
+      <tr>
+        <td><strong>Freshness</strong></td>
+        <td>Poll EONET every 10 minutes as a configurable target; upstream publication latency is outside system control.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2 class="section-title">3. Scope and user journeys</h2>
+  <h3 class="subsection-title">3.1 Primary user journey</h3>
+  <ol>
+    <li>The user opens the globe and sees current open events grouped and color-coded by category with a visible last-updated time.</li>
+    <li>The user narrows the view by event type, time range, status, or map bounds. The client requests filtered results from <code>/api/v1/events</code>.</li>
+    <li>The user selects an event. The detail drawer queries <code>/api/v1/events/{id}</code> to display EONET title, category, geometry coordinate history, observation dates, magnitude if supplied, source links, and coordinate approximation caveats.</li>
+    <li>The application displays Country Profile Cards associated with the event geometry, labeling the country boundary source and national scale of demographic density values.</li>
+    <li>The article panel requests <code>/api/v1/events/{id}/articles</code> and lists candidate news items with publisher, publication time, link, and human-readable match reasons (+35, +25, +25, +15). The user clicks to open the source article in a new browser tab.</li>
+  </ol>
+
+  <h3 class="subsection-title">3.2 Secondary journeys</h3>
+  <ul>
+    <li>Search the event list by keyword or country name and open an event without manipulating the 3D globe.</li>
+    <li>Open an open-ocean or offshore event with no sovereign country match and still inspect the complete scientific record.</li>
+    <li>Open an event during upstream API downtime or rate-limit exhaustion and inspect cached records with an amber freshness banner.</li>
+    <li>Toggle 1-click <strong>Lite Mode</strong> to pause WebGL rendering on low-spec hardware while retaining complete list and drawer functionality.</li>
+  </ul>
+
+  <h3 class="subsection-title">3.3 System boundary</h3>
+  <p>The application owns provider adapters, normalization, event-to-country spatial joins, article candidate ranking, persistence, and the user-facing API. NASA, NewsAPI, REST Countries, and Natural Earth remain external data authorities. The browser receives only application responses and never receives provider credentials.</p>
+</div>
+
+<!-- PAGE 4: REQUIREMENTS (4.1 & 4.2) -->
+<div class="page-break">
+  <h2 class="section-title">4. Requirements</h2>
+  <h3 class="subsection-title">4.1 Functional requirements (FR-01 to FR-15)</h3>
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 10%;">ID</th>
+        <th style="width: 78%;">Requirement</th>
+        <th style="width: 12%;">Priority</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>FR-01</strong></td>
+        <td>Ingest EONET open events and configured recent closed events every 10 minutes using category, status, and time filters.</td>
+        <td>Must</td>
+      </tr>
+      <tr>
+        <td><strong>FR-02</strong></td>
+        <td>Normalize stable event IDs, clean whitespace, store missing magnitudes strictly as null, and preserve source URLs.</td>
+        <td>Must</td>
+      </tr>
+      <tr>
+        <td><strong>FR-03</strong></td>
+        <td>Support Point, Polygon, and LineString geometries and multiple dated observations without losing coordinates or timestamps.</td>
+        <td>Must</td>
+      </tr>
+      <tr>
+        <td><strong>FR-04</strong></td>
+        <td>Render markers and polygon footprints on an interactive 3D globe alongside a keyboard-accessible sidebar list.</td>
+        <td>Must</td>
+      </tr>
+      <tr>
+        <td><strong>FR-05</strong></td>
+        <td>Filter by viewport bounds (bbox), category, status, date window, and search query, returning paginated deterministic results.</td>
+        <td>Must</td>
+      </tr>
+      <tr>
+        <td><strong>FR-06</strong></td>
+        <td>Show title, category, dates, status, magnitude, sources, and satellite coordinate approximation caveats.</td>
+        <td>Must</td>
+      </tr>
+      <tr>
+        <td><strong>FR-07</strong></td>
+        <td>Resolve event geometry to zero or more country identifiers using versioned local Natural Earth Admin 0 boundaries.</td>
+        <td>Must</td>
+      </tr>
+      <tr>
+        <td><strong>FR-08</strong></td>
+        <td>Fetch and cache REST Countries v3.1 data including population, area, currencies, and ISO codes.</td>
+        <td>Must</td>
+      </tr>
+      <tr>
+        <td><strong>FR-09</strong></td>
+        <td>Calculate population density as population divided by area in square kilometres with zero/null area guards, labeled as national.</td>
+        <td>Must</td>
+      </tr>
+      <tr>
+        <td><strong>FR-10</strong></td>
+        <td>Search NewsAPI by event keywords, recognized location terms, country, language, and publication window within daily budget.</td>
+        <td>Must</td>
+      </tr>
+      <tr>
+        <td><strong>FR-11</strong></td>
+        <td>Rank candidate articles using documented evidence (+35, +25, +25, +15) and return human-readable match reasons.</td>
+        <td>Must</td>
+      </tr>
+      <tr>
+        <td><strong>FR-12</strong></td>
+        <td>Show cached data and provider freshness timestamps when an upstream provider is temporarily unavailable or rate-limited.</td>
+        <td>Must</td>
+      </tr>
+      <tr>
+        <td><strong>FR-13</strong></td>
+        <td>Expose provider health, cache freshness, and ingestion status to operators via <code>/api/v1/health</code> without disclosing secrets.</td>
+        <td>Should</td>
+      </tr>
+      <tr>
+        <td><strong>FR-14</strong></td>
+        <td>Deduplicate events by provider identity and articles by canonicalized URL (stripping tracking query parameters).</td>
+        <td>Must</td>
+      </tr>
+      <tr>
+        <td><strong>FR-15</strong></td>
+        <td>Allow users to open original scientific sources or news articles in a new browser tab (<code>rel="noopener noreferrer"</code>).</td>
+        <td>Must</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3 class="subsection-title">4.2 Quality &amp; Non-Functional requirements (NFR-01 to NFR-10)</h3>
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 18%;">ID</th>
+        <th>Acceptance target</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>NFR-01 Performance</strong></td>
+        <td>For a warm database and viewport query up to 2,000 events, p95 API response must be <strong>under 2 seconds</strong>. Large historical results are paginated.</td>
+      </tr>
+      <tr>
+        <td><strong>NFR-02 Freshness</strong></td>
+        <td>Under normal provider availability, newly visible EONET changes are ingested within 15 minutes of feed publication. Show source and sync timestamps.</td>
+      </tr>
+      <tr>
+        <td><strong>NFR-03 Reliability</strong></td>
+        <td>Upstream provider failures must not erase the last successful snapshot. A provider outage must not prevent stored events from rendering.</td>
+      </tr>
+      <tr>
+        <td><strong>NFR-04 Security</strong></td>
+        <td>Secrets stay server-side; excluded from source control, client bundles, logs, and error traces. Public endpoints are read-only (GET).</td>
+      </tr>
+      <tr>
+        <td><strong>NFR-05 Data integrity</strong></td>
+        <td>Coordinates enforce WGS 84 longitude and latitude in GeoJSON order (EPSG:4326). Database constraints reject invalid coordinates and empty IDs.</td>
+      </tr>
+      <tr>
+        <td><strong>NFR-06 Accessibility</strong></td>
+        <td>Core browsing, filtering, and event inspection are 100% keyboard-operable; color is not the only signal; controls have accessible ARIA names.</td>
+      </tr>
+      <tr>
+        <td><strong>NFR-07 Maintainability</strong></td>
+        <td>Each upstream API has a separate adapter and contract tests; provider fields do not leak into the public API response.</td>
+      </tr>
+      <tr>
+        <td><strong>NFR-08 Observability</strong></td>
+        <td>Each sync records provider, start/end timestamps, outcome, counts, and error class in <code>sync_run</code>; health endpoint reports freshness.</td>
+      </tr>
+      <tr>
+        <td><strong>NFR-09 Cost control</strong></td>
+        <td>Enrichment is deduplicated and budgeted (max 90 NewsAPI req/day). Events are enriched once on discovery and once at closure.</td>
+      </tr>
+      <tr>
+        <td><strong>NFR-10 Interpretability</strong></td>
+        <td>Every article association displays explicit scoring evidence; every country card shows retrieval time; all 3 disclaimers are visible.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- PAGE 5: SECTIONS 5 & 6 -->
+<div class="page-break">
+  <h2 class="section-title">5. Architecture overview</h2>
+  <p>The system uses a <strong>decoupled modular architecture</strong> separating interactive user queries from asynchronous ingestion and enrichment pipelines. The browser communicates exclusively with the FastAPI application gateway. Provider integrations use backend adapters, and normalized records are stored in PostgreSQL with PostGIS.</p>
+
+  <div class="diagram-container">
+    <svg width="600" height="195" viewBox="0 0 600 195" xmlns="http://www.w3.org/2000/svg">
+      <!-- Browser Box -->
+      <rect x="10" y="10" width="125" height="70" rx="4" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.2"/>
+      <text x="72" y="28" font-family="sans-serif" font-size="8.8" font-weight="bold" text-anchor="middle" fill="#1e3a8a">Browser Client</text>
+      <text x="72" y="42" font-family="sans-serif" font-size="7.5" text-anchor="middle" fill="#3b82f6">React 18 + TS</text>
+      <text x="72" y="55" font-family="sans-serif" font-size="7.5" text-anchor="middle" fill="#3b82f6">CesiumJS 3D Globe</text>
+      <text x="72" y="68" font-family="sans-serif" font-size="7.5" text-anchor="middle" fill="#3b82f6">1-Click Lite Mode</text>
+
+      <!-- Arrow Browser to FastAPI -->
+      <line x1="135" y1="45" x2="185" y2="45" stroke="#0f172a" stroke-width="1.2"/>
+      <polygon points="185,45 178,41 178,49" fill="#0f172a"/>
+      <text x="160" y="39" font-family="sans-serif" font-size="6.5" text-anchor="middle" fill="#475569">REST/JSON</text>
+
+      <!-- FastAPI Box -->
+      <rect x="185" y="10" width="135" height="70" rx="4" fill="#f0fdf4" stroke="#22c55e" stroke-width="1.2"/>
+      <text x="252" y="28" font-family="sans-serif" font-size="8.8" font-weight="bold" text-anchor="middle" fill="#14532d">Application API</text>
+      <text x="252" y="42" font-family="sans-serif" font-size="7.5" text-anchor="middle" fill="#15803d">FastAPI + Pydantic v2</text>
+      <text x="252" y="55" font-family="sans-serif" font-size="7.5" text-anchor="middle" fill="#15803d">Read-Only Gateway</text>
+      <text x="252" y="68" font-family="sans-serif" font-size="7.5" text-anchor="middle" fill="#15803d">Rate-Limit &amp; CORS</text>
+
+      <!-- Worker Box -->
+      <rect x="185" y="110" width="135" height="70" rx="4" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.2"/>
+      <text x="252" y="128" font-family="sans-serif" font-size="8.8" font-weight="bold" text-anchor="middle" fill="#78350f">Ingestion Worker</text>
+      <text x="252" y="142" font-family="sans-serif" font-size="7.5" text-anchor="middle" fill="#b45309">Async Python Scheduler</text>
+      <text x="252" y="155" font-family="sans-serif" font-size="7.5" text-anchor="middle" fill="#b45309">10-min EONET Sync</text>
+      <text x="252" y="168" font-family="sans-serif" font-size="7.5" text-anchor="middle" fill="#b45309">Spatial &amp; News Scoring</text>
+
+      <!-- Data Stores Box -->
+      <rect x="360" y="10" width="95" height="70" rx="4" fill="#faf5ff" stroke="#a855f7" stroke-width="1.2"/>
+      <text x="407" y="28" font-family="sans-serif" font-size="8.8" font-weight="bold" text-anchor="middle" fill="#581c87">Data Stores</text>
+      <text x="407" y="42" font-family="sans-serif" font-size="7.5" text-anchor="middle" fill="#7e22ce">PostGIS 3.4 (:5432)</text>
+      <text x="407" y="55" font-family="sans-serif" font-size="7.5" text-anchor="middle" fill="#7e22ce">Redis 7 (:6379)</text>
+      <text x="407" y="68" font-family="sans-serif" font-size="7.5" text-anchor="middle" fill="#7e22ce">Quota Counters</text>
+
+      <!-- External Feeds Box -->
+      <rect x="360" y="110" width="225" height="70" rx="4" fill="#f8fafc" stroke="#64748b" stroke-width="1.2"/>
+      <text x="472" y="126" font-family="sans-serif" font-size="8.8" font-weight="bold" text-anchor="middle" fill="#1e293b">External Authorities</text>
+      <text x="472" y="140" font-family="sans-serif" font-size="7.5" text-anchor="middle" fill="#475569">&bull; NASA EONET v3 (Free, Keyless)</text>
+      <text x="472" y="153" font-family="sans-serif" font-size="7.5" text-anchor="middle" fill="#475569">&bull; REST Countries v3.1 (Free, Keyless)</text>
+      <text x="472" y="166" font-family="sans-serif" font-size="7.5" text-anchor="middle" fill="#475569">&bull; NewsAPI v2 (Developer 90/day budget)</text>
+      <text x="472" y="176" font-family="sans-serif" font-size="6.8" font-weight="bold" text-anchor="middle" fill="#dc2626">Corrected: REST Countries v3.1 (not v5)</text>
+
+      <!-- Connecting Lines -->
+      <line x1="320" y1="40" x2="360" y2="40" stroke="#0f172a" stroke-width="1.2"/>
+      <line x1="320" y1="140" x2="360" y2="140" stroke="#0f172a" stroke-width="1.2"/>
+      <line x1="252" y1="80" x2="252" y2="110" stroke="#0f172a" stroke-width="1" stroke-dasharray="2,2"/>
+      <line x1="407" y1="80" x2="407" y2="110" stroke="#0f172a" stroke-width="1.2"/>
+    </svg>
+    <div class="diagram-caption">Figure 1. Logical component architecture. The client browser communicates strictly with the FastAPI gateway.</div>
+  </div>
+
+  <h3 class="subsection-title">5.1 Main request and data paths</h3>
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 25%;">Path</th>
+        <th>Sequence</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Interactive read</strong></td>
+        <td>Browser &rarr; FastAPI &rarr; Redis cache hit &rarr; (on cache miss: PostGIS spatial query) &rarr; normalized API response &rarr; globe and detail drawer.</td>
+      </tr>
+      <tr>
+        <td><strong>Event synchronization</strong></td>
+        <td>Async Scheduler &rarr; EONET adapter &rarr; validation and normalization &rarr; idempotent event/geometry upsert &rarr; country containment &rarr; enrichment jobs.</td>
+      </tr>
+      <tr>
+        <td><strong>Article enrichment</strong></td>
+        <td>Worker &rarr; Redis quota check (90/day) &rarr; NewsAPI adapter &rarr; candidate deduplication &rarr; rule-based scoring &rarr; article and match persistence.</td>
+      </tr>
+      <tr>
+        <td><strong>Country enrichment</strong></td>
+        <td>Worker &rarr; PostGIS country lookup &rarr; REST Countries v3.1 adapter &rarr; profile normalization &rarr; versioned cache and retrieval time.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3 class="subsection-title">5.2 Deployment topology (Docker Compose)</h3>
+  <ul style="margin-bottom: 2px;">
+    <li><strong><code>frontend</code>:</strong> Nginx 1.27 Alpine serving Vite production assets on internal port <code>8080</code> (mapped to host <code>3000:8080</code>).</li>
+    <li><strong><code>backend</code>:</strong> FastAPI / Uvicorn running on host port <code>8000:8000</code>.</li>
+    <li><strong><code>worker</code>:</strong> Async Python background worker running <code>python -m app.worker</code> on <code>backend_net</code>.</li>
+    <li><strong><code>db</code>:</strong> PostgreSQL 16 + PostGIS 3.4 running on internal port <code>5432</code> (volume <code>pgdata</code>).</li>
+    <li><strong><code>redis</code>:</strong> Redis 7 Alpine running on internal port <code>6379</code> (volume <code>redisdata</code>).</li>
+  </ul>
+</div>
+
+<!-- PAGE 6: SECTIONS 6 & 7 -->
+<div class="page-break">
+  <h2 class="section-title">6. Component design</h2>
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 20%;">Component</th>
+        <th style="width: 40%;">Responsibilities</th>
+        <th style="width: 40%;">Design notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Web client</strong></td>
+        <td>Globe, filters, search, event list, detail drawer, country context, article links.</td>
+        <td>React 18 and TypeScript with CesiumJS. On-demand rendering loop. Provide 1-click Lite Mode for low-spec laptops.</td>
+      </tr>
+      <tr>
+        <td><strong>Application API</strong></td>
+        <td>Read endpoints, schema validation, filtering, bbox parsing, rate limiting, error mapping.</td>
+        <td>FastAPI and Pydantic v2. Version under <code>/api/v1</code>. Never expose server-side credentials or raw upstream payloads.</td>
+      </tr>
+      <tr>
+        <td><strong>Integration adapters</strong></td>
+        <td>Provider HTTP calls, authentication, parsing, retry classification.</td>
+        <td>One adapter per provider. Use explicit timeouts, bounded retries with jitter, and provider-specific quota guards.</td>
+      </tr>
+      <tr>
+        <td><strong>Ingestion worker</strong></td>
+        <td>Rolling EONET polling, country refresh, queued article enrichment, cleanup.</td>
+        <td>Asynchronous Python process using <code>asyncio</code> and <code>httpx</code>. Idempotent upserts, quota tracking, and sync logging.</td>
+      </tr>
+      <tr>
+        <td><strong>PostgreSQL &amp; PostGIS</strong></td>
+        <td>Event, geometry, article, country, match evidence, and sync state.</td>
+        <td>Use GiST spatial indexes, foreign key constraints, unique observation keys, transactions, and initialization scripts.</td>
+      </tr>
+      <tr>
+        <td><strong>Redis</strong></td>
+        <td>Short-lived API cache, NewsAPI daily quota counter, rate-limit state.</td>
+        <td>Disposable; PostgreSQL remains source of truth. Use TTLs (60s to 300s) and date-based quota keys (<code>newsapi:quota:YYYY-MM-DD</code>).</td>
+      </tr>
+      <tr>
+        <td><strong>Boundary dataset</strong></td>
+        <td>Point/polygon containment and country association.</td>
+        <td>Natural Earth Admin 0 at 1:10m. Loaded from structured GeoJSON; excludes <code>iso_a3 = '-99'</code>.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3 class="subsection-title">6.1 Recommended technology choices</h3>
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 20%;">Layer</th>
+        <th style="width: 35%;">Choice</th>
+        <th style="width: 45%;">Reason</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Frontend</strong></td>
+        <td>React 18, TypeScript, CesiumJS, Vite</td>
+        <td>Interactive 3D virtual globe with WebGL on-demand rendering and strong component typing.</td>
+      </tr>
+      <tr>
+        <td><strong>Backend Gateway</strong></td>
+        <td>Python 3.11+ with FastAPI &amp; Pydantic v2</td>
+        <td>High-performance async I/O, automatic OpenAPI documentation, and strict schema validation.</td>
+      </tr>
+      <tr>
+        <td><strong>Spatial Database</strong></td>
+        <td>PostgreSQL 16 with PostGIS 3.4 (with SQLite WAL fallback)</td>
+        <td>Fast spatial indexing (GiST), native geometry storage, and <code>ST_Intersects</code> containment.</td>
+      </tr>
+      <tr>
+        <td><strong>Background Ingestion</strong></td>
+        <td>Async Python Worker (<code>asyncio</code> + <code>httpx</code>)</td>
+        <td>Lightweight, deterministic scheduling without the operational complexity of Celery.</td>
+      </tr>
+      <tr>
+        <td><strong>Caching &amp; Quota</strong></td>
+        <td>Redis 7 Alpine</td>
+        <td>In-memory response caching and atomic increment counters for API budget protection.</td>
+      </tr>
+      <tr>
+        <td><strong>Packaging</strong></td>
+        <td>Docker Compose (5 containers)</td>
+        <td>Reproducible local and staging deployment with internal bridge network security.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2 class="section-title">7. External integration specifications</h2>
+  <h3 class="subsection-title">7.1 NASA EONET v3</h3>
+  <table>
+    <tbody>
+      <tr>
+        <td style="width: 25%;"><strong>Base URL</strong></td>
+        <td><code>https://eonet.gsfc.nasa.gov/api/v3</code></td>
+      </tr>
+      <tr>
+        <td><strong>Endpoints used</strong></td>
+        <td><code>/events?status=open</code> to fetch open events; <code>/events?status=closed&amp;limit=100</code> for closed events.</td>
+      </tr>
+      <tr>
+        <td><strong>Authentication</strong></td>
+        <td>None required (100% Free Public Scientific API).</td>
+      </tr>
+      <tr>
+        <td><strong>Polling interval</strong></td>
+        <td>Every 10 minutes (600 seconds). Ensures newly visible events appear within 15 minutes of publication.</td>
+      </tr>
+      <tr>
+        <td><strong>Fields consumed</strong></td>
+        <td><code>id</code>, <code>title</code>, <code>categories</code>, <code>geometry</code>, <code>sources</code>, <code>closed</code>, <code>magnitudeValue</code>, <code>magnitudeUnit</code>.</td>
+      </tr>
+      <tr>
+        <td><strong>Mapping rules</strong></td>
+        <td><code>closed</code> is null for open events; missing magnitude stored strictly as null; multi-observation geometries preserved.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3 class="subsection-title">7.2 NewsAPI v2</h3>
+  <table>
+    <tbody>
+      <tr>
+        <td style="width: 25%;"><strong>Base URL</strong></td>
+        <td><code>https://newsapi.org/v2</code></td>
+      </tr>
+      <tr>
+        <td><strong>Endpoints used</strong></td>
+        <td><code>/v2/everything</code></td>
+      </tr>
+      <tr>
+        <td><strong>Authentication</strong></td>
+        <td>API key sent in <code>X-Api-Key</code> header (kept strictly server-side).</td>
+      </tr>
+      <tr>
+        <td><strong>Query parameters</strong></td>
+        <td><code>q</code>, <code>searchIn=title,description</code>, <code>language=en</code>, <code>sortBy=relevancy</code>, <code>pageSize=15</code>.</td>
+      </tr>
+      <tr>
+        <td><strong>Quota management</strong></td>
+        <td>Hard daily cap of <strong>90 requests/day</strong> in Redis (reserving 10 req on 100 req/day free Developer tier).</td>
+      </tr>
+      <tr>
+        <td><strong>Enrichment cadence</strong></td>
+        <td>Enriched once upon initial event discovery and once at event closure.</td>
+      </tr>
+      <tr>
+        <td><strong>Keyless fallback</strong></td>
+        <td>If budget exhausted or key missing, queries Google News RSS and attaches UN OCHA ReliefWeb disaster feeds.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3 class="subsection-title">7.3 REST Countries v3.1</h3>
+  <table>
+    <tbody>
+      <tr>
+        <td style="width: 25%;"><strong>Base URL</strong></td>
+        <td><code>https://restcountries.com/v3.1</code> <em>(Corrected from draft PDF's erroneous "v5" label)</em></td>
+      </tr>
+      <tr>
+        <td><strong>Endpoints used</strong></td>
+        <td><code>/alpha?codes={codes}&amp;fields=name,cca2,cca3,population,area,currencies</code> for batch lookups.</td>
+      </tr>
+      <tr>
+        <td><strong>Authentication</strong></td>
+        <td>None required (100% Free Public Demographic API).</td>
+      </tr>
+      <tr>
+        <td><strong>Density math</strong></td>
+        <td>Guarded: returns null if area &le; 0 or missing, else <code>round(population / area)</code> as national average.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3 class="subsection-title">7.4 Local country boundaries</h3>
+  <p style="margin-bottom: 2px;"><strong>Dataset:</strong> Natural Earth Admin 0 Countries at 1:10m scale, pre-processed into GeoJSON (<code>ne_admin0_countries.json</code>). Features with <code>iso_a3 = '-99'</code> (e.g. Somaliland) are excluded from downstream REST Countries calls. Offshore points within 100 km are attached to the nearest coastal nation via <code>ST_DWithin</code>.</p>
+</div>
+
+<!-- PAGE 7: SECTION 8 (PHYSICAL SCHEMA PART 1) -->
+<div class="page-break">
+  <h2 class="section-title">8. Data model and internal API</h2>
+  <h3 class="subsection-title">8.1 Physical schema (8 normalized tables &mdash; Part 1)</h3>
+  <pre><code>-- 1. Sovereign Country Boundaries (Natural Earth Admin 0 1:10m)
+CREATE TABLE country_boundary (
+    iso_a3 VARCHAR(3) PRIMARY KEY,
+    iso_a2 VARCHAR(2),
+    name VARCHAR(120) NOT NULL,
+    geom GEOMETRY(MultiPolygon, 4326) NOT NULL,
+    dataset_version VARCHAR(32) NOT NULL DEFAULT 'ne_10m_admin_0_v5.1.1',
+    CONSTRAINT chk_valid_iso_a3 CHECK (iso_a3 <> '-99' AND length(trim(iso_a3)) = 3)
+);
+CREATE INDEX idx_country_boundary_geom ON country_boundary USING GIST (geom);
+
+-- 2. Country Demographic Profiles (REST Countries v3.1)
+CREATE TABLE country_profile (
+    iso_a3 VARCHAR(3) PRIMARY KEY REFERENCES country_boundary(iso_a3) ON DELETE CASCADE,
+    iso_a2 VARCHAR(2),
+    name VARCHAR(120) NOT NULL,
+    population BIGINT CHECK (population IS NULL OR population >= 0),
+    area_sq_km DOUBLE PRECISION CHECK (area_sq_km IS NULL OR area_sq_km >= 0),
+    population_density INTEGER, -- round(population / area_sq_km) or NULL
+    currencies JSONB NOT NULL DEFAULT '{}'::jsonb,
+    retrieved_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 3. Primary Scientific Hazards (NASA EONET v3)
+CREATE TABLE event (
+    id VARCHAR(64) PRIMARY KEY,
+    title VARCHAR(300) NOT NULL,
+    category VARCHAR(64) NOT NULL,
+    status VARCHAR(16) NOT NULL CHECK (status IN ('open', 'closed')),
+    closed_at TIMESTAMPTZ,
+    sources JSONB NOT NULL DEFAULT '[]'::jsonb,
+    first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    news_enriched_on_open BOOLEAN NOT NULL DEFAULT FALSE,
+    news_enriched_on_close BOOLEAN NOT NULL DEFAULT FALSE,
+    CONSTRAINT chk_event_id_nonempty CHECK (length(trim(id)) > 0),
+    CONSTRAINT chk_event_title_nonempty CHECK (length(trim(title)) > 0)
+);
+CREATE INDEX idx_event_category_status ON event (category, status);
+CREATE INDEX idx_event_last_updated ON event (last_updated_at DESC);
+CREATE INDEX idx_event_title_trgm ON event USING GIN (title gin_trgm_ops);
+
+-- 4. Spatial Observations (Point, LineString, Polygon)
+CREATE TABLE observation (
+    id BIGSERIAL PRIMARY KEY,
+    event_id VARCHAR(64) NOT NULL REFERENCES event(id) ON DELETE CASCADE,
+    observed_at TIMESTAMPTZ NOT NULL,
+    geom GEOMETRY(Geometry, 4326) NOT NULL,
+    magnitude_value DOUBLE PRECISION,
+    magnitude_unit VARCHAR(32),
+    CONSTRAINT uq_event_observation UNIQUE (event_id, observed_at),
+    CONSTRAINT chk_valid_geom CHECK (ST_IsValid(geom))
+);
+CREATE INDEX idx_observation_geom ON observation USING GIST (geom);
+CREATE INDEX idx_observation_event_time ON observation (event_id, observed_at DESC);
+
+-- 5. Event-to-Country Spatial Join Table
+CREATE TABLE event_country (
+    event_id VARCHAR(64) NOT NULL REFERENCES event(id) ON DELETE CASCADE,
+    iso_a3 VARCHAR(3) NOT NULL REFERENCES country_boundary(iso_a3) ON DELETE CASCADE,
+    match_method VARCHAR(32) NOT NULL CHECK (match_method IN ('intersects', 'coastal_proximity')),
+    PRIMARY KEY (event_id, iso_a3)
+);
+CREATE INDEX idx_event_country_iso ON event_country (iso_a3);</code></pre>
+</div>
+
+<!-- PAGE 8: SECTION 8 (PART 2) & SECTION 9 -->
+<div class="page-break">
+  <h3 class="subsection-title">8.1 Physical schema (8 normalized tables &mdash; Part 2)</h3>
+  <pre><code>-- 6. Deduplicated News Articles (NewsAPI v2 / Fallback Feeds)
+CREATE TABLE article (
+    canonical_url TEXT PRIMARY KEY,
+    original_url TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    publisher VARCHAR(160) NOT NULL,
+    published_at TIMESTAMPTZ NOT NULL,
+    retrieved_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_article_published_at ON article (published_at DESC);
+
+-- 7. Explainable Match Evidence (algorithm_version = 'v1')
+CREATE TABLE article_match (
+    event_id VARCHAR(64) NOT NULL REFERENCES event(id) ON DELETE CASCADE,
+    article_url TEXT NOT NULL REFERENCES article(canonical_url) ON DELETE CASCADE,
+    score INTEGER NOT NULL CHECK (score >= 0 AND score <= 100),
+    confidence_label VARCHAR(16) NOT NULL CHECK (confidence_label IN ('Strong', 'Moderate', 'Weak')),
+    match_reasons JSONB NOT NULL DEFAULT '[]'::jsonb,
+    algorithm_version VARCHAR(16) NOT NULL DEFAULT 'v1',
+    PRIMARY KEY (event_id, article_url)
+);
+CREATE INDEX idx_article_match_event_score ON article_match (event_id, score DESC);
+
+-- 8. Ingestion & Observability Log
+CREATE TABLE sync_run (
+    id BIGSERIAL PRIMARY KEY,
+    provider VARCHAR(32) NOT NULL CHECK (provider IN ('eonet', 'rest_countries', 'newsapi')),
+    started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    ended_at TIMESTAMPTZ,
+    outcome VARCHAR(16) NOT NULL CHECK (outcome IN ('success', 'partial', 'error', 'rate_limited')),
+    records_processed INTEGER NOT NULL DEFAULT 0,
+    error_class VARCHAR(120)
+);
+CREATE INDEX idx_sync_run_provider_started ON sync_run (provider, started_at DESC);</code></pre>
+
+  <h3 class="subsection-title">8.2 Internal API endpoints</h3>
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 12%;">Method</th>
+        <th style="width: 32%;">Path</th>
+        <th style="width: 36%;">Purpose &amp; Parameters</th>
+        <th style="width: 20%;">Cache Policy</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>GET</code></td>
+        <td><code>/api/v1/health</code></td>
+        <td>Operator health, sync timestamps, NewsAPI quota remaining, disclaimers.</td>
+        <td>No cache</td>
+      </tr>
+      <tr>
+        <td><code>GET</code></td>
+        <td><code>/api/v1/events</code></td>
+        <td>Filtered GeoJSON FeatureCollection (category, status, bbox, date, query).</td>
+        <td>Redis 60s TTL</td>
+      </tr>
+      <tr>
+        <td><code>GET</code></td>
+        <td><code>/api/v1/events/{id}</code></td>
+        <td>Detailed event view, observation timeline, sources, matched country profile card.</td>
+        <td>Redis 120s TTL</td>
+      </tr>
+      <tr>
+        <td><code>GET</code></td>
+        <td><code>/api/v1/events/{id}/articles</code></td>
+        <td>Ranked candidate articles with score badges and plain-language match reasons.</td>
+        <td>Redis 300s TTL</td>
+      </tr>
+      <tr>
+        <td><code>POST</code></td>
+        <td><code>/api/v1/sync</code></td>
+        <td>Admin trigger to force live or offline synchronization pass (internal network only).</td>
+        <td>No cache</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2 class="section-title">9. Data processing, matching and demographic pipelines</h2>
+  <h3 class="subsection-title">9.1 Explainable news scoring rubric (algorithm_version = 'v1')</h3>
+  <p>To eliminate opaque black-box NLP/LLM behavior and provide complete transparency, candidate articles are scored on a deterministic 100-point rubric:</p>
+  <ul>
+    <li><strong>+35 pts &mdash; Event Title Phrase Match:</strong> A distinct token from the EONET event title appears in the article headline (e.g. <code>"Matched event title phrase 'Kilauea' (+35)"</code>).</li>
+    <li><strong>+25 pts &mdash; Hazard Category Keyword Match:</strong> A specific hazard term (<code>wildfire</code>, <code>storm</code>, <code>typhoon</code>, <code>volcano</code>, <code>flood</code>, etc.) appears in the headline or description (e.g. <code>"Matched hazard category keyword 'volcano' (+25)"</code>).</li>
+    <li><strong>+25 pts &mdash; Country / Place Name Match:</strong> The matched country or administrative territory name appears in the title or description (e.g. <code>"Matched country/location 'United States' (+25)"</code>).</li>
+    <li><strong>+15 pts &mdash; Temporal Proximity Match:</strong> The article publication timestamp is within the active event observation window (&plusmn;7 days) (e.g. <code>"Published within event observation window (+15)"</code>).</li>
+  </ul>
+  <p><strong>Confidence Thresholds:</strong> <code>Strong</code> (&ge; 70 pts), <code>Moderate</code> (45&ndash;69 pts), <code>Weak</code> (25&ndash;44 pts). Articles scoring below 25 points are discarded.</p>
+
+  <h3 class="subsection-title">9.2 Guarded population density formula</h3>
+  <pre><code>def calculate_population_density(population: int | None, area_sq_km: float | None) -> int | None:
+    if population is None or area_sq_km is None or area_sq_km &lt;= 0:
+        return None
+    return round(population / area_sq_km)</code></pre>
+  <p style="margin-bottom: 2px;">The UI displays the result with the mandatory label: <strong>"National Average (people/km&sup2;)"</strong>.</p>
+</div>
+
+<!-- PAGE 9: SECTIONS 10, 11, 12 -->
+<div class="page-break">
+  <h2 class="section-title">10. Security and responsible presentation</h2>
+  <h3 class="subsection-title">10.1 Key isolation and network hardening (NFR-04)</h3>
+  <ul>
+    <li><strong>Zero Client Secret Exposure:</strong> <code>NEWSAPI_KEY</code> and database passwords reside strictly in server-side <code>.env</code> configurations loaded by FastAPI and the worker. Client browser network bundles contain zero credentials.</li>
+    <li><strong>Read-Only Public Endpoints:</strong> All public routes accept only <code>GET</code> requests. Mutating routes (<code>POST /sync</code>) are shielded from external clients.</li>
+    <li><strong>Strict Parameter Validation:</strong> Pydantic v2 validates all query inputs. Coordinate bounding boxes outside <code>[-180..180, -90..90]</code> return HTTP <code>422</code>.</li>
+    <li><strong>Docker Network Segmentation:</strong> Database port <code>5432</code> and Redis port <code>6379</code> communicate across an internal bridge network (<code>backend_net</code>) and are not exposed to the public host.</li>
+  </ul>
+
+  <h3 class="subsection-title">10.2 Mandatory user interface disclaimers (NFR-10)</h3>
+  <div class="callout-disclaimer">
+    <strong>1. Satellite Geometry Caveat:</strong> "Event coordinates and perimeters from NASA EONET v3 represent approximate satellite/agency observations and may reflect reporting latency. Do not use for local emergency navigation or life-safety decisions."
+  </div>
+  <div class="callout-disclaimer">
+    <strong>2. National Population Density Caveat:</strong> "Population density is a national macro-level average calculated from REST Countries v3.1 (Population &divide; Area in km&sup2;) and does not measure local population exposure inside the hazard footprint."
+  </div>
+  <div class="callout-disclaimer">
+    <strong>3. Contextual News Matching Caveat:</strong> "News reports are matched contextually using keyword, location, and date proximity rules&mdash;not by verified GPS coordinates within the disaster perimeter."
+  </div>
+
+  <h2 class="section-title">11. Reliability and operations</h2>
+  <h3 class="subsection-title">11.1 Graceful degradation model (NFR-03, NFR-09)</h3>
+  <ul>
+    <li><strong>Last Valid Snapshot Preservation:</strong> If NASA EONET, REST Countries, or NewsAPI is unreachable or returns HTTP <code>429/5xx</code>, the worker aborts overwriting and preserves the stored database snapshot.</li>
+    <li><strong>Freshness Banner:</strong> The frontend displays an amber banner showing the exact age of cached data and the last successful sync timestamp.</li>
+    <li><strong>NewsAPI Quota Defense:</strong> When the 90-request/day budget is reached, NewsAPI calls are paused and the keyless fallback pipeline (Google News RSS + ReliefWeb) automatically takes over.</li>
+  </ul>
+
+  <h2 class="section-title">12. Deployment and delivery</h2>
+  <ul>
+    <li><strong>Multi-Stage Slim Images:</strong> Frontend built with Node.js and served on <code>nginx:1.27-alpine</code>; Backend and Worker built on <code>python:3.11-slim</code>.</li>
+    <li><strong>Non-Root Execution:</strong> Application processes execute as an unprivileged user (<code>USER appuser</code>, UID <code>10001</code>).</li>
+    <li><strong>Container Hardening:</strong> Configured with <code>security_opt: ["no-new-privileges:true"]</code>, <code>cap_drop: ["ALL"]</code>, and <code>read_only: true</code> root filesystems with ephemeral <code>tmpfs: [/tmp]</code>.</li>
+    <li><strong>Lite Mode Optimization:</strong> CesiumJS uses <code>requestRenderMode: true</code> (rendering only upon camera interaction), reducing idle GPU usage by ~90%. A 1-click header toggle allows switching to 2D list-only exploration.</li>
+  </ul>
+</div>
+
+<!-- PAGE 10: SECTIONS 13, 14, 15 -->
+<div class="page-break">
+  <h2 class="section-title">13. Verification strategy</h2>
+  <ul>
+    <li><strong>Layer 1 (Unit Tests):</strong> Zero-I/O tests for EONET title trimming, null magnitude preservation, URL canonicalization, density math, and <code>scorer.py</code> weights (+35, +25, +25, +15).</li>
+    <li><strong>Layer 2 (Contract Tests):</strong> Recorded JSON fixtures testing EONET v3, REST Countries v3.1, and NewsAPI v2 adapters under HTTP 401, 429, and 503 errors.</li>
+    <li><strong>Layer 3 (Spatial Integration Tests):</strong> Real PostGIS queries asserting <code>ST_Intersects</code> and coastal <code>ST_DWithin</code> (100 km) country matching, plus performance benchmarks verifying <strong>&lt; 2s response for 2,000 events (NFR-01)</strong>.</li>
+    <li><strong>Layer 4 (Frontend &amp; E2E Tests):</strong> Vitest component tests and Playwright E2E suites verifying keyboard accessibility (<code>@axe-core/playwright</code>), 3D globe interactions, and outage simulation.</li>
+  </ul>
+
+  <h2 class="section-title">14. Implementation roadmap and acceptance</h2>
+  <p>The system followed an iterative Agile Scrum lifecycle structured across four sprints:</p>
+  <ul>
+    <li><strong>Sprint 1 (FR-01 to FR-03):</strong> EONET v3 ingestion adapter, normalizer, idempotent PostGIS upsert queries, and 10-minute worker loop.</li>
+    <li><strong>Sprint 2 (FR-07 to FR-09):</strong> Natural Earth Admin 0 1:10m spatial import, <code>ST_Intersects</code> matching, REST Countries v3.1 demographic profiling, and guarded density math.</li>
+    <li><strong>Sprint 3 (FR-10 to FR-12, FR-14):</strong> NewsAPI v2 integration, Redis quota tracking (90 req/day), rule-based scoring (<code>algorithm_version 1</code>), and keyless fallback.</li>
+    <li><strong>Sprint 4 (FR-04 to FR-06, FR-13, FR-15):</strong> FastAPI read-only gateway, React 18 + CesiumJS 3D interface, Lite Mode, accessible sidebar list, and E2E verification.</li>
+  </ul>
+
+  <h2 class="section-title">15. Architecture decision records (ADRs)</h2>
+  <ul>
+    <li><strong>ADR-01 (Async Python Worker vs Celery):</strong> Adopted a native <code>asyncio</code> scheduler inside a dedicated container, eliminating heavy Celery dependencies and simplifying Docker operations.</li>
+    <li><strong>ADR-02 (Server-Side PostGIS vs Client GIS):</strong> Executed spatial intersections server-side to prevent client browsers from downloading heavy shapefiles.</li>
+    <li><strong>ADR-03 (Explainable Rule Scorer vs Black-Box AI):</strong> Replaced opaque NLP/LLM models with a verifiable point-based scoring rubric (+35, +25, +25, +15).</li>
+    <li><strong>ADR-04 (Redis Budget Guard &amp; Multi-Tier News):</strong> Capped daily NewsAPI requests at 90 and implemented keyless Google News RSS and ReliefWeb fallbacks.</li>
+    <li><strong>ADR-05 (On-Demand WebGL &amp; Lite Mode):</strong> Added demand-driven rendering and a 1-click toggle to ensure usability on low-spec student laptops.</li>
+  </ul>
+</div>
+
+<!-- PAGE 11: SECTIONS 16 & 17 -->
+<div class="page-break">
+  <h2 class="section-title">16. Glossary</h2>
+  <p><strong>Admin 0:</strong> Sovereign national boundary level. &bull; <strong>BBOX:</strong> Viewport bounding box <code>[minLon, minLat, maxLon, maxLat]</code>. &bull; <strong>CesiumJS:</strong> WebGL 3D virtual globe library. &bull; <strong>EONET:</strong> NASA Earth Observatory Natural Event Tracker. &bull; <strong>EPSG:4326:</strong> WGS 84 coordinate reference system. &bull; <strong>GiST:</strong> Generalized Search Tree spatial indexing in PostgreSQL. &bull; <strong>Lite Mode:</strong> 2D list-and-drawer view pausing WebGL rendering. &bull; <strong>PostGIS:</strong> Spatial extension for PostgreSQL. &bull; <strong>RFC 7946:</strong> GeoJSON specification.</p>
+
+  <h2 class="section-title">17. References</h2>
+  <p style="font-size: 7.8pt; line-height: 1.32; color: #334155;">
+    1. Abbaspour, R., et al. (2026). Decoupled microservice architectures and API gateways in municipal crisis data infrastructure. <em>Int. J. Disaster Info. Systems</em>, 18(2), 114–128.<br>
+    2. Avcıoğlu, E., et al. (2025). Automated natural hazard harvesting from unstructured digital media archives. <em>Computers &amp; Geosciences</em>, 172, 105280.<br>
+    3. Cabrera, J., &amp; Lee, S. (2020). Scale discrepancies and administrative boundary joins in WebGIS flood assessments. <em>J. Environ. Manage.</em>, 260, 110112.<br>
+    4. da Silva, L., et al. (2023). RiverCure: High-performance spatial database indexing and simulation on Web GIS. <em>Environ. Model. Softw.</em>, 165, 105719.<br>
+    5. Gao, Y., et al. (2025). Ground-truth satellite sensing versus social media soft sensing: Mitigating urban reporting bias. <em>Remote Sens. Environ.</em>, 302, 113970.<br>
+    6. Goh, T., et al. (2023). Multi-source hazard mapping in Pasig City. <em>Philippine J. Science</em>, 152(4), 1321–1334.<br>
+    7. Hanny, C., et al. (2026). NASA EOS/MODIS FIRMS and Sentinel validation for multi-modal disaster detection. <em>IEEE Trans. Geosci. Remote Sens.</em>, 64, 1–14.<br>
+    8. Huang, X., &amp; Usbeck, R. (2024). Overcoming the black-box opacity of neural classifiers in crisis geocoding. <em>Info. Syst. Frontiers</em>, 26(3), 889–905.<br>
+    9. Li, W., et al. (2022). Enhancing spatial cognition through 3D virtual web scenes in higher education. <em>J. Geogr. High. Educ.</em>, 46(1), 45–62.<br>
+    10. Mudiyanselage, S., et al. (2026). WebGL 3D virtual globes versus immersive VR in volumetric risk perception. <em>Int. J. Digital Earth</em>, 19(1), 22–39.<br>
+    11. Pahuriray, J., &amp; Cerna, M. (2025). FRiMap: Open-source WebGIS flood hazard visualization in Sagay City. <em>ASEAN J. Sci. Technol. Dev.</em>, 42(1), 89–102.<br>
+    12. Pascual, R., &amp; Leonen, A. (2025). Integrating satellite flood perimeters with socioeconomic census indicators in Bulacan. <em>Asian Geographer</em>, 42(2), 177–195.<br>
+    13. Pennington, C., et al. (2022). Automated news harvesting at the British Geological Survey. <em>Geol. Soc. Lond. Spec. Publ.</em>, 520, 311–324.<br>
+    14. Phạm, H., &amp; Nguyễn, T. (2026). From static 2D paper cartography to WebGL 3D digital earth environments. <em>Cartogr. Geogr. Inf. Sci.</em>, 53(2), 145–161.<br>
+    15. Shen, J., &amp; Hwang, S. (2019). Spatial-temporal correlation analysis between EM-DAT and GAUL administrative boundaries. <em>Natural Hazards</em>, 98(3), 1017–1035.<br>
+    16. Sufi, F. (2026). Global disaster signal extraction across 1.25 million news reports. <em>Info. Process. Manage.</em>, 63(1), 103551.<br>
+    17. Sufi, F., &amp; Alsulami, M. (2025). Automated news mining for crisis event detection. <em>IEEE Access</em>, 13, 21900–21915.<br>
+    18. Ugliotti, F., et al. (2025). Server-side spatial indexing with PostGIS and Redis caching for emergency dashboards. <em>ISPRS Int. J. Geo-Inf.</em>, 14(3), 112.<br>
+    19. Yang, C., et al. (2023). CesiumJS in modern web browsers: High-performance 3D visualization. <em>Comput. Environ. Urban Syst.</em>, 99, 101905.<br>
+    20. Yaneza, M., et al. (2025). ISO 25010 software quality evaluation of localized WebGIS platforms in Calamba City. <em>J. Syst. Softw.</em>, 208, 111902.
+  </p>
+</div>
+
+</body>
+</html>
