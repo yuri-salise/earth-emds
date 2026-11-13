@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import re
 import sqlite3
 import threading
 
@@ -30,6 +31,41 @@ def _resolve_writable_sqlite_path(requested_path: str | None = None) -> str:
         return str(target)
     except OSError:
         return "/tmp/earth_emds.db"
+
+
+CATEGORY_ALIASES: dict[str, list[str]] = {
+    "wildfires": ["Wildfires", "wildfires", "wildfire"],
+    "wildfire": ["Wildfires", "wildfires", "wildfire"],
+    "severestorms": ["Severe Storms", "severeStorms", "severestorms", "severe storm", "severestorm"],
+    "severestorm": ["Severe Storms", "severeStorms", "severestorms", "severe storm", "severestorm"],
+    "volcanoes": ["Volcanoes", "volcanoes", "volcano"],
+    "volcano": ["Volcanoes", "volcanoes", "volcano"],
+    "floods": ["Floods", "floods", "flood"],
+    "flood": ["Floods", "floods", "flood"],
+    "sealakeice": [
+        "Sea and Lake Ice",
+        "seaLakeIce",
+        "seaandlakeice",
+        "sealakeice",
+        "Sea & Lake Ice",
+        "sea & lake ice",
+    ],
+    "seaandlakeice": [
+        "Sea and Lake Ice",
+        "seaLakeIce",
+        "seaandlakeice",
+        "sealakeice",
+        "Sea & Lake Ice",
+        "sea & lake ice",
+    ],
+    "earthquakes": ["Earthquakes", "earthquakes", "earthquake"],
+    "earthquake": ["Earthquakes", "earthquakes", "earthquake"],
+    "landslides": ["Landslides", "landslides", "landslide"],
+    "landslide": ["Landslides", "landslides", "landslide"],
+    "drought": ["Drought", "drought"],
+    "dusthaze": ["Dust and Haze", "dustHaze", "dusthaze"],
+    "tempextremes": ["Temperature Extremes", "tempExtremes", "tempextremes"],
+}
 
 
 class Database:
@@ -602,8 +638,15 @@ class Database:
         params: list[object] = []
 
         if category and category.lower() != "all":
-            clauses.append("LOWER(e.category) = LOWER(?)")
-            params.append(category.strip())
+            clean_cat = re.sub(r"[^a-z0-9]", "", category.lower())
+            aliases = CATEGORY_ALIASES.get(clean_cat)
+            if aliases:
+                placeholders = ",".join("?" for _ in aliases)
+                clauses.append(f"(e.category IN ({placeholders}) OR LOWER(e.category) = LOWER(?))")
+                params.extend([*aliases, category.strip()])
+            else:
+                clauses.append("LOWER(e.category) = LOWER(?)")
+                params.append(category.strip())
 
         if status and status.lower() != "all":
             clauses.append("LOWER(e.status) = LOWER(?)")

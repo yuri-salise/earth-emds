@@ -48,12 +48,24 @@ class TestApiIntegrationAndSecurity:
         assert "last_updated" in body
         assert "disclaimers" in body
 
-        # Filter by category
+        # Filter by category (both canonical and camelCase IDs)
         wf_resp = client.get("/api/v1/events", params={"category": "Wildfires", "status": "open"})
         assert wf_resp.status_code == 200
         wf_items = wf_resp.json()["items"]
         assert len(wf_items) >= 1
         assert all(ev["category"] == "Wildfires" and ev["status"] == "open" for ev in wf_items)
+
+        storm_resp = client.get("/api/v1/events", params={"category": "severeStorms"})
+        assert storm_resp.status_code == 200
+        storm_items = storm_resp.json()["items"]
+        assert len(storm_items) >= 1
+        assert all("storm" in ev["category"].lower() for ev in storm_items)
+
+        ice_resp = client.get("/api/v1/events", params={"category": "seaLakeIce"})
+        assert ice_resp.status_code == 200
+        ice_items = ice_resp.json()["items"]
+        assert len(ice_items) >= 1
+        assert all("ice" in ev["category"].lower() for ev in ice_items)
 
         # Filter by Philippines bounding box (minLon,minLat,maxLon,maxLat)
         bbox_resp = client.get("/api/v1/events", params={"bbox": "116.0,4.5,127.5,21.5"})

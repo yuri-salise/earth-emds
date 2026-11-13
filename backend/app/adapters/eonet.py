@@ -16,12 +16,13 @@ CATEGORY_MAP = {
     "volcanoes": "Volcanoes",
     "floods": "Floods",
     "seaandlakeice": "Sea and Lake Ice",
+    "sealakeice": "Sea and Lake Ice",
     "earthquakes": "Earthquakes",
     "landslides": "Landslides",
     "drought": "Drought",
     "dusthaze": "Dust and Haze",
     "tempextremes": "Temperature Extremes",
-    "waterColor": "Water Color",
+    "watercolor": "Water Color",
     "manmade": "Manmade",
 }
 
@@ -31,9 +32,15 @@ def _normalize_category(categories: list[dict] | None) -> str:
         return "Severe Storms"
     first = categories[0] if isinstance(categories[0], dict) else {}
     cid = (first.get("id") or "").strip().lower()
+    clean_id = "".join(ch for ch in cid if ch.isalnum())
+    if clean_id in CATEGORY_MAP:
+        return CATEGORY_MAP[clean_id]
     if cid in CATEGORY_MAP:
         return CATEGORY_MAP[cid]
     title = (first.get("title") or "").strip()
+    clean_title = "".join(ch for ch in title.lower() if ch.isalnum())
+    if clean_title in CATEGORY_MAP:
+        return CATEGORY_MAP[clean_title]
     return title or "Severe Storms"
 
 
