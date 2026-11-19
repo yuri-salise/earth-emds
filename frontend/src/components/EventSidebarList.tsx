@@ -1,9 +1,10 @@
 import React, { useRef } from 'react';
 import { HazardEvent } from '../types/domain';
 import {
+  formatCompactWgs84,
   formatUtcTimestamp,
-  formatWgs84,
   getCategoryMeta,
+  getLatestObservation,
   getRepresentativeCoord,
 } from '../utils/categories';
 import { soundFx } from '../utils/soundFx';
@@ -12,18 +13,26 @@ interface EventSidebarListProps {
   events: HazardEvent[];
   selectedEvent: HazardEvent | null;
   onSelectEvent: (event: HazardEvent) => void;
+  onResetFilters?: () => void;
   isLoading: boolean;
   liteMode: boolean;
 }
 
-export const EventSidebarList: React.FC<EventSidebarListProps> = ({
+export const EventSidebarList: React.FC<EventSidebarListProps> = React.memo(({
   events,
   selectedEvent,
   onSelectEvent,
+  onResetFilters,
   isLoading,
   liteMode,
 }) => {
   const itemRefs = useRef<Array<HTMLDivElement | null>>([]);
+  itemRefs.current.length = events.length;
+
+  const selectedIndex = selectedEvent
+    ? events.findIndex((ev) => ev.id === selectedEvent.id)
+    : -1;
+  const rovingFocusIndex = selectedIndex >= 0 ? selectedIndex : 0;
 
   const handleSelect = (ev: HazardEvent) => {
     soundFx.playSelect();
@@ -74,23 +83,46 @@ export const EventSidebarList: React.FC<EventSidebarListProps> = ({
         </div>
         {liteMode && (
           <div className="lite-mode-active-pill" data-testid="render-mode-indicator">
-            <span className="lite-dot" />
+            <span className="lite-dot" aria-hidden="true" />
             <span>Lite Mode — GPU Off (2D Tactical Grid)</span>
           </div>
         )}
       </div>
 
       <div className="sidebar-keyboard-hint mono-text">
-        <span>Keyboard: ↑/↓ Navigate · Enter/Space Inspect · Esc Close Drawer</span>
+        <span>↑/↓ Navigate · Enter/Space Inspect · Esc Close</span>
       </div>
 
       {isLoading && events.length === 0 ? (
-        <div className="sidebar-empty-state" role="status">
-          <p>Loading NASA EONET v3 satellite telemetry…</p>
+        <div className="sidebar-skeleton-stack" role="status" aria-label="Loading hazard telemetry">
+          <span className="sr-only">Loading NASA EONET v3 satellite telemetry…</span>
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="skeleton-card" aria-hidden="true">
+              <div className="skeleton-line skeleton-short" />
+              <div className="skeleton-line skeleton-long" />
+              <div className="skeleton-line skeleton-med" />
+            </div>
+          ))}
         </div>
       ) : events.length === 0 ? (
         <div className="sidebar-empty-state" role="status" data-testid="empty-events-state">
-          <p>No hazard events match the current filter criteria.</p>
+          <p className="empty-state-title">No matching hazard events</p>
+          <p className="empty-state-copy">
+            Try widening your date window, disabling the viewport bounding box, or clearing search
+            filters.
+          </p>
+          {onResetFilters && (
+            <button
+              type="button"
+              className="empty-reset-btn"
+              onClick={() => {
+                soundFx.playFilter();
+                onResetFilters();
+              }}
+            >
+              Reset All Filters
+            </button>
+          )}
         </div>
       ) : (
         <div
@@ -103,7 +135,7 @@ export const EventSidebarList: React.FC<EventSidebarListProps> = ({
             const isSelected = selectedEvent?.id === ev.id;
             const meta = getCategoryMeta(ev.category);
             const Icon = meta.Icon;
-            const latestObs = ev.observations[0];
+            const latestObs = getLatestObservation(ev.observations);
             const repCoord = getRepresentativeCoord(latestObs?.geom);
             const geomType = latestObs?.geom?.type || 'Point';
 
@@ -114,13 +146,10 @@ export const EventSidebarList: React.FC<EventSidebarListProps> = ({
                   itemRefs.current[index] = el;
                 }}
                 role="option"
-                tabIndex={0}
+                tabIndex={index === rovingFocusIndex ? 0 : -1}
                 aria-selected={isSelected}
                 data-testid={`event-list-item-${ev.id}`}
                 className={`event-card ${isSelected ? 'event-card-selected' : ''}`}
-                style={{
-                  animationDelay: `${Math.min(index * 30, 240)}ms`,
-                }}
                 onClick={() => handleSelect(ev)}
                 onKeyDown={(e) => handleKeyDown(e, ev, index)}
               >
@@ -144,7 +173,7 @@ export const EventSidebarList: React.FC<EventSidebarListProps> = ({
                       ev.status === 'open' ? 'status-pill-open' : 'status-pill-closed'
                     }`}
                   >
-                    {ev.status === 'open' && <span className="radar-pulse-dot" />}
+                    {ev.status === 'open' && <span className="radar-pulse-dot" aria-hidden="true" />}
                     <span>{ev.status.toUpperCase()}</span>
                   </span>
                 </div>
@@ -156,7 +185,7 @@ export const EventSidebarList: React.FC<EventSidebarListProps> = ({
                   <span className="geom-type-chip mono-text">{geomType}</span>
                   <span className="obs-count-chip mono-text">
                     {ev.observations.length}{' '}
-                    {ev.observations.length === 1 ? 'observation' : 'observations'}
+                    {ev.observations.length === 1 ? 'obs' : 'obs'}
                   </span>
 
                   {/* Matched Country ISO Tags */}
@@ -171,13 +200,15 @@ export const EventSidebarList: React.FC<EventSidebarListProps> = ({
                       </span>
                     ))
                   ) : (
-                    <span className="country-iso-tag country-iso-ocean mono-text">OPEN OCEAN</span>
+                    <span className="country-iso-tag country-iso-ocean mono-text">Open Ocean</span>
                   )}
                 </div>
 
                 <div className="event-card-footer mono-text">
-                  <span>{repCoord ? formatWgs84(repCoord) : 'Coords N/A'}</span>
-                  <span>{formatUtcTimestamp(latestObs?.observed_at || ev.last_updated_at)}</span>
+                  <span>{repCoord ? formatCompactWgs84(repCoord) : 'Coords N/A'}</span>
+                  <span className="card-footer-time">
+                    {formatUtcTimestamp(latestObs?.observed_at || ev.last_updated_at)}
+                  </span>
                 </div>
               </div>
             );
@@ -186,4 +217,4 @@ export const EventSidebarList: React.FC<EventSidebarListProps> = ({
       )}
     </aside>
   );
-};
+});

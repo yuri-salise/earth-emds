@@ -6,7 +6,7 @@ interface CountryCardProps {
   country: MatchedCountry;
 }
 
-export const CountryCard: React.FC<CountryCardProps> = ({ country }) => {
+export const CountryCard: React.FC<CountryCardProps> = React.memo(({ country }) => {
   const currencyEntries = Object.entries(country.currencies || {});
   const currencyLabel =
     currencyEntries.length > 0
@@ -88,4 +88,4 @@ export const CountryCard: React.FC<CountryCardProps> = ({ country }) => {
       </div>
     </div>
   );
-};
+});

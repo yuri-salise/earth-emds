@@ -1,20 +1,20 @@
 import React from 'react';
 import { ScoredArticle } from '../types/domain';
-import { formatUtcTimestamp } from '../utils/categories';
+import { formatUtcTimestamp, safeExternalUrl } from '../utils/categories';
 
 interface ArticleListProps {
   articles: ScoredArticle[];
   isLoading: boolean;
 }
 
-export const ArticleList: React.FC<ArticleListProps> = ({ articles, isLoading }) => {
+export const ArticleList: React.FC<ArticleListProps> = React.memo(({ articles, isLoading }) => {
   return (
     <section className="drawer-section" aria-labelledby="drawer-news-heading">
       <div className="drawer-section-header">
-        <span className="section-kicker mono-text">SECTION 03 // EXPLAINABLE MEDIA COVERAGE</span>
         <h3 id="drawer-news-heading" className="drawer-section-title">
-          Ranked News Coverage &amp; Rule-Based Match Evidence
+          Ranked News Coverage &amp; Match Evidence
         </h3>
+        <span className="section-source-tag mono-text">Rule Scorer v1</span>
       </div>
 
       {/* Mandatory Contextual News Matching Disclaimer Badge */}
@@ -29,8 +29,17 @@ export const ArticleList: React.FC<ArticleListProps> = ({ articles, isLoading })
       </div>
 
       {isLoading ? (
-        <div className="articles-empty-card" role="status">
-          <p>Evaluating candidate NewsAPI v2 coverage with rule-based scorer (v1)…</p>
+        <div className="articles-skeleton-stack" role="status" aria-label="Loading matched news">
+          <span className="sr-only">
+            Evaluating candidate NewsAPI v2 coverage with rule-based scorer…
+          </span>
+          {[0, 1].map((i) => (
+            <div key={i} className="skeleton-card" aria-hidden="true">
+              <div className="skeleton-line skeleton-short" />
+              <div className="skeleton-line skeleton-long" />
+              <div className="skeleton-line skeleton-med" />
+            </div>
+          ))}
         </div>
       ) : articles.length === 0 ? (
         <div className="articles-empty-card" data-testid="no-articles-state">
@@ -48,6 +57,7 @@ export const ArticleList: React.FC<ArticleListProps> = ({ articles, isLoading })
                 : article.confidence_label === 'Moderate'
                   ? 'confidence-moderate'
                   : 'confidence-weak';
+            const safeHref = safeExternalUrl(article.original_url || article.canonical_url);
 
             return (
               <article
@@ -58,7 +68,9 @@ export const ArticleList: React.FC<ArticleListProps> = ({ articles, isLoading })
                 <div className="article-top-bar">
                   <div className="article-publisher-meta">
                     <span className="article-publisher">{article.publisher}</span>
-                    <span className="article-dot">·</span>
+                    <span className="article-dot" aria-hidden="true">
+                      ·
+                    </span>
                     <time
                       className="article-date mono-text"
                       dateTime={article.published_at}
@@ -80,7 +92,7 @@ export const ArticleList: React.FC<ArticleListProps> = ({ articles, isLoading })
                   </div>
                 </div>
 
-                {/* Animated Score Progress Bar */}
+                {/* Score Progress Bar */}
                 <div className="score-bar-track" aria-hidden="true">
                   <div
                     className={`score-bar-fill ${confidenceClass}`}
@@ -89,18 +101,22 @@ export const ArticleList: React.FC<ArticleListProps> = ({ articles, isLoading })
                 </div>
 
                 <h4 className="article-headline">
-                  <a
-                    href={article.original_url || article.canonical_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="article-external-link"
-                    data-testid="article-external-link"
-                  >
+                  {safeHref ? (
+                    <a
+                      href={safeHref}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="article-external-link"
+                      data-testid="article-external-link"
+                    >
+                      <span>{article.title}</span>
+                      <span className="external-arrow" aria-hidden="true">
+                        ↗
+                      </span>
+                    </a>
+                  ) : (
                     <span>{article.title}</span>
-                    <span className="external-arrow" aria-hidden="true">
-                      ↗
-                    </span>
-                  </a>
+                  )}
                 </h4>
 
                 {article.description && (
@@ -109,7 +125,7 @@ export const ArticleList: React.FC<ArticleListProps> = ({ articles, isLoading })
 
                 {/* Human-Readable Match Reasons Chips */}
                 <div className="match-reasons-block">
-                  <span className="match-reasons-label mono-text">SCORING EVIDENCE:</span>
+                  <span className="match-reasons-label mono-text">Scoring evidence</span>
                   <div className="match-reasons-chips" data-testid="article-match-reasons">
                     {article.match_reasons.map((reason, idx) => (
                       <span
@@ -129,4 +145,4 @@ export const ArticleList: React.FC<ArticleListProps> = ({ articles, isLoading })
       )}
     </section>
   );
-};
+});

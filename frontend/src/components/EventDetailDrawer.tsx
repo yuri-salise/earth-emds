@@ -1,10 +1,13 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { HazardEvent, ScoredArticle } from '../types/domain';
 import {
   formatUtcTimestamp,
   formatWgs84,
   getCategoryMeta,
+  getEarliestObservation,
+  getLatestObservation,
   getRepresentativeCoord,
+  safeExternalUrl,
 } from '../utils/categories';
 import { soundFx } from '../utils/soundFx';
 import { ArticleList } from './ArticleList';
@@ -15,16 +18,20 @@ interface EventDetailDrawerProps {
   articles: ScoredArticle[];
   isLoadingArticles: boolean;
   onClose: () => void;
+  disableEscapeClose?: boolean;
 }
 
-export const EventDetailDrawer: React.FC<EventDetailDrawerProps> = ({
+export const EventDetailDrawer: React.FC<EventDetailDrawerProps> = React.memo(({
   event,
   articles,
   isLoadingArticles,
   onClose,
+  disableEscapeClose = false,
 }) => {
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+
   useEffect(() => {
-    if (!event) return;
+    if (!event || disableEscapeClose) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         soundFx.playDrawerClose();
@@ -33,13 +40,20 @@ export const EventDetailDrawer: React.FC<EventDetailDrawerProps> = ({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [event, onClose]);
+  }, [event, onClose, disableEscapeClose]);
+
+  useEffect(() => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = 0;
+    }
+  }, [event?.id]);
 
   if (!event) return null;
 
   const meta = getCategoryMeta(event.category);
   const Icon = meta.Icon;
-  const latestObs = event.observations[0];
+  const latestObs = getLatestObservation(event.observations);
+  const earliestObs = getEarliestObservation(event.observations);
 
   const magnitudeDisplay =
     latestObs && latestObs.magnitude_value !== null && latestObs.magnitude_value !== undefined
@@ -75,7 +89,7 @@ export const EventDetailDrawer: React.FC<EventDetailDrawerProps> = ({
               event.status === 'open' ? 'status-pill-open' : 'status-pill-closed'
             }`}
           >
-            {event.status === 'open' && <span className="radar-pulse-dot" />}
+            {event.status === 'open' && <span className="radar-pulse-dot" aria-hidden="true" />}
             <span>{event.status.toUpperCase()}</span>
           </span>
           <span className="drawer-event-id mono-text" data-testid="drawer-event-id">
@@ -97,7 +111,7 @@ export const EventDetailDrawer: React.FC<EventDetailDrawerProps> = ({
         </button>
       </div>
 
-      <div className="drawer-scroll-content">
+      <div ref={scrollContainerRef} className="drawer-scroll-content">
         <h2 id="drawer-event-title" className="drawer-main-title">
           {event.title}
         </h2>
@@ -105,10 +119,10 @@ export const EventDetailDrawer: React.FC<EventDetailDrawerProps> = ({
         {/* SECTION 1: NASA EONET v3 Telemetry & Observation History */}
         <section className="drawer-section" aria-labelledby="drawer-telemetry-heading">
           <div className="drawer-section-header">
-            <span className="section-kicker mono-text">SECTION 01 // SATELLITE TELEMETRY</span>
             <h3 id="drawer-telemetry-heading" className="drawer-section-title">
-              NASA EONET v3 Telemetry &amp; Observation History
+              Satellite Telemetry &amp; Observation History
             </h3>
+            <span className="section-source-tag mono-text">NASA EONET v3</span>
           </div>
 
           {/* Mandatory Satellite Geometry Approximation Disclaimer Badge */}
@@ -135,17 +149,19 @@ export const EventDetailDrawer: React.FC<EventDetailDrawerProps> = ({
             </div>
             <div className="telemetry-cell">
               <dt className="metric-label">First Observed</dt>
-              <dd className="metric-value mono-text">{formatUtcTimestamp(event.first_seen_at)}</dd>
+              <dd className="metric-value mono-text">
+                {formatUtcTimestamp(earliestObs?.observed_at || event.first_seen_at)}
+              </dd>
             </div>
             <div className="telemetry-cell">
               <dt className="metric-label">
-                {event.status === 'closed' ? 'Closed Timestamp' : 'Last Synchronized'}
+                {event.status === 'closed' ? 'Closed Timestamp' : 'Latest Observation'}
               </dt>
               <dd className="metric-value mono-text">
                 {formatUtcTimestamp(
                   event.status === 'closed' && event.closed_at
                     ? event.closed_at
-                    : event.last_updated_at
+                    : latestObs?.observed_at || event.last_updated_at
                 )}
               </dd>
             </div>
@@ -154,18 +170,18 @@ export const EventDetailDrawer: React.FC<EventDetailDrawerProps> = ({
           {/* Coordinate Observation Timeline (Point, LineString, Polygon in WGS 84 [lon, lat]) */}
           <div className="observations-timeline-box">
             <h4 className="sub-heading">
-              WGS 84 Coordinate Timeline ([lon, lat] · {event.observations.length}{' '}
+              WGS 84 Coordinate Timeline ({event.observations.length}{' '}
               {event.observations.length === 1 ? 'Observation' : 'Observations'})
             </h4>
             <ul className="observation-list" data-testid="observation-timeline">
-              {event.observations.map((obs) => {
+              {event.observations.map((obs, idx) => {
                 const rep = getRepresentativeCoord(obs.geom);
                 const mag =
                   obs.magnitude_value !== null && obs.magnitude_value !== undefined
-                    ? `${obs.magnitude_value} ${obs.magnitude_unit || ''}`.trim()
+                    ? `${obs.magnitude_value.toLocaleString('en-US')} ${obs.magnitude_unit || ''}`.trim()
                     : 'Magnitude not reported';
                 return (
-                  <li key={String(obs.id)} className="observation-item">
+                  <li key={`${obs.id}-${obs.observed_at}-${idx}`} className="observation-item">
                     <div className="observation-item-top">
                       <span className="geom-type-badge mono-text">{obs.geom.type}</span>
                       <time className="observation-time mono-text" dateTime={obs.observed_at}>
@@ -195,20 +211,24 @@ export const EventDetailDrawer: React.FC<EventDetailDrawerProps> = ({
               <p className="muted-note">No external agency URLs attached to this EONET record.</p>
             ) : (
               <div className="source-links-row">
-                {event.sources.map((src) => (
-                  <a
-                    key={`${src.id}-${src.url}`}
-                    href={src.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="source-link-pill"
-                    data-testid="official-source-link"
-                  >
-                    <span className="mono-text">{src.id}</span>
-                    {src.title && <span className="source-title-text">— {src.title}</span>}
-                    <span aria-hidden="true">↗</span>
-                  </a>
-                ))}
+                {event.sources.map((src) => {
+                  const href = safeExternalUrl(src.url);
+                  if (!href) return null;
+                  return (
+                    <a
+                      key={`${src.id}-${src.url}`}
+                      href={href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="source-link-pill"
+                      data-testid="official-source-link"
+                    >
+                      <span className="mono-text">{src.id}</span>
+                      {src.title && <span className="source-title-text">— {src.title}</span>}
+                      <span aria-hidden="true">↗</span>
+                    </a>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -217,12 +237,10 @@ export const EventDetailDrawer: React.FC<EventDetailDrawerProps> = ({
         {/* SECTION 2: Matched Country Profile Cards */}
         <section className="drawer-section" aria-labelledby="drawer-country-heading">
           <div className="drawer-section-header">
-            <span className="section-kicker mono-text">
-              SECTION 02 // POSTGIS &amp; REST COUNTRIES v3.1
-            </span>
             <h3 id="drawer-country-heading" className="drawer-section-title">
               Matched Country Profiles &amp; Macro Demographics
             </h3>
+            <span className="section-source-tag mono-text">REST Countries v3.1</span>
           </div>
 
           {/* Mandatory National Population Density Disclaimer Badge */}
@@ -243,9 +261,9 @@ export const EventDetailDrawer: React.FC<EventDetailDrawerProps> = ({
                 No Sovereign Country Profile Matched (Open Ocean / Offshore Event)
               </div>
               <p>
-                This hazard geometry lies outside sovereign administrative polygons (Natural Earth
-                Admin 0 1:10m) and beyond the 100 km coastal proximity buffer (`ST_DWithin`). Full
-                NASA EONET v3 satellite telemetry remains available above.
+                This hazard geometry lies outside sovereign administrative boundaries (Natural Earth
+                Admin 0 1:10m) and beyond the 100 km coastal proximity buffer. Full NASA EONET v3
+                satellite telemetry remains available above.
               </p>
             </div>
           ) : (
@@ -262,4 +280,4 @@ export const EventDetailDrawer: React.FC<EventDetailDrawerProps> = ({
       </div>
     </aside>
   );
-};
+});

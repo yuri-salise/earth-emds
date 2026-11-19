@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { HealthStatus } from '../types/domain';
 import { formatUtcTimestamp } from '../utils/categories';
 
@@ -8,11 +8,32 @@ interface FreshnessBannerProps {
   onCloseDisclaimers: () => void;
 }
 
-export const FreshnessBanner: React.FC<FreshnessBannerProps> = ({
+export const FreshnessBanner: React.FC<FreshnessBannerProps> = React.memo(({
   health,
   showDisclaimersModal,
   onCloseDisclaimers,
 }) => {
+  const closeBtnRef = useRef<HTMLButtonElement | null>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!showDisclaimersModal) return;
+    previousFocusRef.current = document.activeElement as HTMLElement | null;
+    closeBtnRef.current?.focus();
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onCloseDisclaimers();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      previousFocusRef.current?.focus?.();
+    };
+  }, [showDisclaimersModal, onCloseDisclaimers]);
+
   const isFallback =
     health.cache_freshness === 'cached_fallback' ||
     health.cache_freshness === 'stale' ||
@@ -29,19 +50,19 @@ export const FreshnessBanner: React.FC<FreshnessBannerProps> = ({
           data-testid="freshness-banner"
         >
           <div className="degraded-banner-left">
-            <span className="degraded-badge">CACHED SNAPSHOT ACTIVE</span>
+            <span className="degraded-badge">Cached Snapshot</span>
             <span>
               Serving verified cached telemetry snapshot (Last successful sync:{' '}
               <strong className="mono-text">{formatUtcTimestamp(health.last_updated_at)}</strong>).
-              Upstream API delays or rate limits never interrupt exploration.
+              Upstream delays or rate limits do not interrupt exploration.
             </span>
           </div>
           <div className="degraded-providers mono-text">
             <span>EONET: {health.providers?.eonet?.outcome || 'cached'}</span>
-            <span>·</span>
-            <span>REST COUNTRIES: {health.providers?.rest_countries?.outcome || 'cached'}</span>
-            <span>·</span>
-            <span>NEWSAPI: {health.providers?.newsapi?.outcome || 'cached'}</span>
+            <span aria-hidden="true">·</span>
+            <span>REST Countries: {health.providers?.rest_countries?.outcome || 'cached'}</span>
+            <span aria-hidden="true">·</span>
+            <span>NewsAPI: {health.providers?.newsapi?.outcome || 'cached'}</span>
           </div>
         </div>
       )}
@@ -53,16 +74,22 @@ export const FreshnessBanner: React.FC<FreshnessBannerProps> = ({
           aria-modal="true"
           aria-labelledby="disclaimers-modal-title"
           data-testid="disclaimers-modal"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              onCloseDisclaimers();
+            }
+          }}
         >
           <div className="disclaimers-modal-card">
             <div className="disclaimers-modal-header">
               <div>
-                <span className="modal-kicker mono-text">MANDATORY TRANSPARENCY &amp; USE BOUNDARY</span>
+                <span className="modal-kicker mono-text">Transparency &amp; Use Boundary</span>
                 <h2 id="disclaimers-modal-title" className="modal-title">
                   Scientific, Demographic &amp; News Uncertainty Disclaimers
                 </h2>
               </div>
               <button
+                ref={closeBtnRef}
                 type="button"
                 className="drawer-close-btn"
                 onClick={onCloseDisclaimers}
@@ -120,4 +147,4 @@ export const FreshnessBanner: React.FC<FreshnessBannerProps> = ({
       )}
     </>
   );
-};
+});

@@ -8,14 +8,16 @@ interface FilterBarProps {
   onChangeFilters: (next: EventFilters) => void;
   onResetFilters: () => void;
   totalCount: number;
+  categoryCounts?: Record<string, number>;
   liteMode: boolean;
 }
 
-export const FilterBar: React.FC<FilterBarProps> = ({
+export const FilterBar: React.FC<FilterBarProps> = React.memo(({
   filters,
   onChangeFilters,
   onResetFilters,
   totalCount,
+  categoryCounts,
   liteMode,
 }) => {
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -60,6 +62,9 @@ export const FilterBar: React.FC<FilterBarProps> = ({
     });
   };
 
+  const isDateRangeInvalid =
+    Boolean(filters.start_date && filters.end_date) && filters.start_date > filters.end_date;
+
   const hasActiveFilters =
     filters.q.trim() !== '' ||
     filters.category !== 'all' ||
@@ -71,7 +76,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   return (
     <section className="filter-bar" aria-label="Hazard Event Search and Filters">
       <div className="filter-row-primary">
-        {/* Search Input with '/' shortcut hint */}
+        {/* Search Input with '/' shortcut hint & clear button */}
         <div className="search-input-wrapper">
           <svg
             width="15"
@@ -91,8 +96,11 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           <input
             ref={searchInputRef}
             type="search"
+            name="q"
+            autoComplete="off"
+            spellCheck={false}
             className="search-input"
-            placeholder="Search hazard events, countries, ISO codes… (Press '/' to focus)"
+            placeholder="Search events, countries, or ISO codes (e.g. PHL, Mayon)…"
             aria-label="Search hazard events"
             data-testid="search-input"
             value={filters.q}
@@ -103,9 +111,24 @@ export const FilterBar: React.FC<FilterBarProps> = ({
               })
             }
           />
-          <kbd className="search-kbd mono-text" aria-hidden="true">
-            /
-          </kbd>
+          {filters.q ? (
+            <button
+              type="button"
+              className="search-clear-btn"
+              aria-label="Clear search query"
+              onClick={() => {
+                soundFx.playFilter();
+                onChangeFilters({ ...filters, q: '' });
+                searchInputRef.current?.focus();
+              }}
+            >
+              ✕
+            </button>
+          ) : (
+            <kbd className="search-kbd mono-text" aria-hidden="true">
+              /
+            </kbd>
+          )}
         </div>
 
         {/* Category Pills */}
@@ -114,6 +137,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             const isSelected = filters.category === cat.id;
             const meta = cat.id === 'all' ? null : getCategoryMeta(cat.id);
             const Icon = meta?.Icon;
+            const count = categoryCounts?.[cat.id];
             return (
               <button
                 key={cat.id}
@@ -138,6 +162,11 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                   </span>
                 )}
                 <span>{cat.label}</span>
+                {typeof count === 'number' && (
+                  <span className="pill-count mono-text" aria-hidden="true">
+                    {count}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -170,9 +199,12 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             <span className="date-label-text">From</span>
             <input
               id="filter-start-date"
+              name="start_date"
               type="date"
-              className="date-input mono-text"
+              max={filters.end_date || undefined}
+              className={`date-input mono-text ${isDateRangeInvalid ? 'date-input-invalid' : ''}`}
               aria-label="Start date"
+              aria-invalid={isDateRangeInvalid || undefined}
               data-testid="start-date-input"
               value={filters.start_date}
               onChange={(e) => {
@@ -185,15 +217,18 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             />
           </label>
           <span className="date-separator" aria-hidden="true">
-            →
+            –
           </span>
           <label className="date-field-label" htmlFor="filter-end-date">
             <span className="date-label-text">To</span>
             <input
               id="filter-end-date"
+              name="end_date"
               type="date"
-              className="date-input mono-text"
+              min={filters.start_date || undefined}
+              className={`date-input mono-text ${isDateRangeInvalid ? 'date-input-invalid' : ''}`}
               aria-label="End date"
+              aria-invalid={isDateRangeInvalid || undefined}
               data-testid="end-date-input"
               value={filters.end_date}
               onChange={(e) => {
@@ -205,6 +240,11 @@ export const FilterBar: React.FC<FilterBarProps> = ({
               }}
             />
           </label>
+          {isDateRangeInvalid && (
+            <span className="date-error-inline" role="alert" data-testid="date-range-error">
+              Start date must precede end date
+            </span>
+          )}
         </div>
 
         {/* Viewport BBox Filter Toggle */}
@@ -221,7 +261,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
               : 'Filter events to the current 3D globe camera bounding box (bbox)'
           }
         >
-          <span>Filter by Current Globe Viewport (bbox)</span>
+          <span>Filter by Globe Viewport</span>
           {filters.useBbox && filters.bbox && (
             <span className="bbox-coords-chip mono-text">
               [{filters.bbox.map((v) => v.toFixed(0)).join(', ')}]
@@ -231,7 +271,11 @@ export const FilterBar: React.FC<FilterBarProps> = ({
 
         {/* Event Count & Reset */}
         <div className="filter-summary-right">
-          <span className="event-count-badge mono-text" data-testid="showing-events-count">
+          <span
+            className="event-count-badge mono-text"
+            aria-live="polite"
+            data-testid="showing-events-count"
+          >
             Showing {totalCount} {totalCount === 1 ? 'event' : 'events'}
           </span>
           {hasActiveFilters && (
@@ -251,4 +295,4 @@ export const FilterBar: React.FC<FilterBarProps> = ({
       </div>
     </section>
   );
-};
+});

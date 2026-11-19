@@ -15,7 +15,7 @@ interface HeaderProps {
   onToggleDisclaimersModal: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({
+export const Header: React.FC<HeaderProps> = React.memo(({
   health,
   lastUpdatedAt,
   liteMode,
@@ -52,13 +52,13 @@ export const Header: React.FC<HeaderProps> = ({
             <path d="M2 12h20" />
           </svg>
         </div>
-        <div>
+        <div className="brand-copy">
           <h1 className="brand-title">
-            EARTH EMDS <span className="brand-divider">//</span>{' '}
+            <span translate="no">EARTH EMDS</span> <span className="brand-divider" aria-hidden="true">//</span>{' '}
             <span className="brand-subtitle">Earth Event &amp; Disaster Monitor</span>
           </h1>
           <p className="brand-tagline">
-            NASA EONET v3 Telemetry · PostGIS &amp; REST Countries v3.1 · Rule-Based NewsAPI v2
+            NASA EONET v3 Telemetry · Natural Earth &amp; REST Countries v3.1 · Rule-Based NewsAPI v2
           </p>
         </div>
       </div>
@@ -70,9 +70,9 @@ export const Header: React.FC<HeaderProps> = ({
           data-testid="freshness-pill"
           title="Last synchronized snapshot timestamp"
         >
-          <span className="freshness-dot" />
+          <span className="freshness-dot" aria-hidden="true" />
           <span className="freshness-status">
-            {isCachedFallback ? 'CACHED SNAPSHOT' : 'LIVE TELEMETRY'}
+            {isCachedFallback ? 'Cached Snapshot' : 'Live Telemetry'}
           </span>
           <span className="freshness-time mono-text" data-testid="last-updated-timestamp">
             {formatUtcTimestamp(lastUpdatedAt || health.last_updated_at)}
@@ -194,4 +194,4 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
     </header>
   );
-};
+});
