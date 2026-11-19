@@ -5,6 +5,7 @@ import {
   CategoryMeta,
   formatWgs84,
   getCategoryMeta,
+  getLatestObservation,
   getRepresentativeCoord,
 } from '../utils/categories';
 import { soundFx } from '../utils/soundFx';
@@ -21,6 +22,8 @@ interface GlobeCanvasProps {
   selectedEvent: HazardEvent | null;
   onSelectEvent: (event: HazardEvent) => void;
   onViewportBboxChange: (bbox: [number, number, number, number]) => void;
+  onSelectCategory?: (categoryId: string) => void;
+  activeCategory?: string;
   useBboxFilter: boolean;
 }
 
@@ -474,8 +477,9 @@ function computeViewportBbox(
   centerLat: number,
   zoom: number
 ): [number, number, number, number] {
-  const halfSpanLon = Math.min(175, Math.max(12, 72 / zoom));
+  const cosLat = Math.max(0.25, Math.cos(centerLat * DEG_TO_RAD));
   const halfSpanLat = Math.min(82, Math.max(10, 52 / zoom));
+  const halfSpanLon = Math.min(180, Math.max(12, 72 / (zoom * cosLat)));
   const minLon = Math.max(-180, Number((centerLon - halfSpanLon).toFixed(2)));
   const maxLon = Math.min(180, Number((centerLon + halfSpanLon).toFixed(2)));
   const minLat = Math.max(-90, Number((centerLat - halfSpanLat).toFixed(2)));
@@ -483,17 +487,38 @@ function computeViewportBbox(
   return [minLon, minLat, maxLon, maxLat];
 }
 
+function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  );
+}
+
+// Deterministic background star positions in normalized [0..1] viewport space
+const STARFIELD = Array.from({ length: 64 }, (_, i) => {
+  const s1 = Math.sin((i + 1) * 12.9898) * 43758.5453;
+  const s2 = Math.sin((i + 1) * 78.233) * 24634.6345;
+  const x = s1 - Math.floor(s1);
+  const y = s2 - Math.floor(s2);
+  const r = i % 7 === 0 ? 1.35 : 0.85;
+  const a = 0.14 + (i % 5) * 0.06;
+  return { x, y, r, a };
+});
+
 function formatTelemetryString(lon: number, lat: number, zoom: number): string {
   const latStr = lat >= 0 ? `${lat.toFixed(1)}°N` : `${Math.abs(lat).toFixed(1)}°S`;
   const lonStr = lon >= 0 ? `${lon.toFixed(1)}°E` : `${Math.abs(lon).toFixed(1)}°W`;
   return `CAM ${latStr}, ${lonStr} · ${zoom.toFixed(2)}x`;
 }
 
-export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
+export const GlobeCanvas: React.FC<GlobeCanvasProps> = React.memo(({
   events,
   selectedEvent,
   onSelectEvent,
   onViewportBboxChange,
+  onSelectCategory,
+  activeCategory = 'all',
   useBboxFilter,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -542,7 +567,7 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
   const precomputedEvents = useMemo<PrecomputedEventRenderData[]>(() => {
     return events.map((ev) => {
       const meta = getCategoryMeta(ev.category);
-      const latestObs = ev.observations[0];
+      const latestObs = getLatestObservation(ev.observations);
       const repCoord = getRepresentativeCoord(latestObs?.geom);
       const repPoint = repCoord ? toVec3(repCoord[0], repCoord[1]) : null;
 
@@ -574,6 +599,12 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
       };
     });
   }, [events]);
+
+  // Keep latest render data in refs so drawFrame & ResizeObserver never churn on selection/filter updates
+  const precomputedEventsRef = useRef<PrecomputedEventRenderData[]>(precomputedEvents);
+  precomputedEventsRef.current = precomputedEvents;
+  const selectedEventIdRef = useRef<string | null>(selectedEvent?.id ?? null);
+  selectedEventIdRef.current = selectedEvent?.id ?? null;
 
   const setEngineHudState = useCallback((active: boolean) => {
     if (engineDotRef.current) {
@@ -624,7 +655,7 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
         const cx = width * 0.5;
         const cy = height * 0.5;
 
-        // 1. Deep space radial background
+        // 1. Deep space radial background + subtle static starfield
         const bgGrad = bctx.createRadialGradient(
           cx,
           cy,
@@ -633,11 +664,23 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
           cy,
           Math.max(width, height)
         );
-        bgGrad.addColorStop(0, '#0B1325');
-        bgGrad.addColorStop(0.55, '#070B16');
+        bgGrad.addColorStop(0, '#0B1428');
+        bgGrad.addColorStop(0.55, '#070C18');
         bgGrad.addColorStop(1, '#04070E');
         bctx.fillStyle = bgGrad;
         bctx.fillRect(0, 0, width, height);
+
+        for (let s = 0; s < STARFIELD.length; s++) {
+          const star = STARFIELD[s];
+          const sx = star.x * width;
+          const sy = star.y * height;
+          if (Math.hypot(sx - cx, sy - cy) > radius * 1.06) {
+            bctx.fillStyle = `rgba(203, 213, 225, ${star.a})`;
+            bctx.beginPath();
+            bctx.arc(sx, sy, star.r, 0, Math.PI * 2);
+            bctx.fill();
+          }
+        }
 
         // 2. Outer atmospheric Rayleigh halo
         const haloGrad = bctx.createRadialGradient(cx, cy, radius * 0.94, cx, cy, radius * 1.16);
@@ -933,10 +976,11 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
 
     // 6. Plot Event Geometries (Polygons, LineStrings, and Points)
     const nextMarkers: ProjectedMarker[] = [];
-    const selectedId = selectedEvent?.id;
+    const selectedId = selectedEventIdRef.current;
+    const renderEvents = precomputedEventsRef.current;
 
-    for (let eIdx = 0; eIdx < precomputedEvents.length; eIdx++) {
-      const item = precomputedEvents[eIdx];
+    for (let eIdx = 0; eIdx < renderEvents.length; eIdx++) {
+      const item = renderEvents[eIdx];
       const { event: ev, meta, repPoint, polygons, lines } = item;
       const isSelected = selectedId === ev.id;
 
@@ -1042,15 +1086,21 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
             ctx.font = '600 11px "Plus Jakarta Sans", sans-serif';
             const label = ev.title.length > 34 ? ev.title.slice(0, 32) + '…' : ev.title;
             const textWidth = ctx.measureText(label).width;
-            const boxX = sx + 14;
-            const boxY = sy - 12;
-            ctx.fillStyle = 'rgba(6, 9, 17, 0.88)';
-            ctx.fillRect(boxX, boxY - 11, textWidth + 12, 20);
+            const boxW = textWidth + 14;
+            const boxH = 22;
+            const preferredX = sx + 14;
+            const boxX =
+              preferredX + boxW > width - 12
+                ? Math.max(12, sx - 14 - boxW)
+                : Math.max(12, preferredX);
+            const boxY = Math.max(24, Math.min(height - 20, sy - 12));
+            ctx.fillStyle = 'rgba(6, 9, 17, 0.92)';
+            ctx.fillRect(boxX, boxY - 12, boxW, boxH);
             ctx.strokeStyle = meta.color;
             ctx.lineWidth = 1;
-            ctx.strokeRect(boxX, boxY - 11, textWidth + 12, 20);
+            ctx.strokeRect(boxX, boxY - 12, boxW, boxH);
             ctx.fillStyle = '#F8FAFC';
-            ctx.fillText(label, boxX + 6, boxY + 2);
+            ctx.fillText(label, boxX + 7, boxY + 2);
           }
         }
       }
@@ -1067,7 +1117,7 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
     ctx.stroke();
 
     ctx.restore();
-  }, [precomputedEvents, selectedEvent, getOrBuildBackgroundCanvas]);
+  }, [getOrBuildBackgroundCanvas]);
 
   const scheduleOnDemandLoop = useCallback(() => {
     if (rafIdRef.current !== null) return;
@@ -1168,21 +1218,58 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
   // Redraw single frame when events or selectedEvent changes
   useEffect(() => {
     drawFrame();
-  }, [drawFrame]);
+  }, [drawFrame, precomputedEvents, selectedEvent]);
 
-  // Smooth fly-to when selectedEvent changes
+  // Smooth fly-to when selectedEvent changes (snaps immediately under prefers-reduced-motion)
+  const selectedId = selectedEvent?.id ?? null;
   useEffect(() => {
     if (!selectedEvent) return;
-    const coord = getRepresentativeCoord(selectedEvent.observations[0]?.geom);
+    const latestObs = getLatestObservation(selectedEvent.observations);
+    const coord = getRepresentativeCoord(latestObs?.geom);
     if (!coord) return;
     const [targetLon, targetLat] = coord;
-    cameraRef.current.targetLon = normalizeLon(targetLon);
-    cameraRef.current.targetLat = clampLat(targetLat);
-    cameraRef.current.targetZoom = Math.max(cameraRef.current.zoom, 1.32);
+    const normLon = normalizeLon(targetLon);
+    const clampedLat = clampLat(targetLat);
+    const nextZoom = Math.max(cameraRef.current.zoom, 1.32);
+
     cameraRef.current.velLon = 0;
     cameraRef.current.velLat = 0;
+
+    if (prefersReducedMotion()) {
+      cameraRef.current.lon = normLon;
+      cameraRef.current.lat = clampedLat;
+      cameraRef.current.zoom = nextZoom;
+      cameraRef.current.targetLon = null;
+      cameraRef.current.targetLat = null;
+      cameraRef.current.targetZoom = null;
+      drawFrame();
+      updateTelemetryDom();
+      emitCurrentBbox();
+      return;
+    }
+
+    cameraRef.current.targetLon = normLon;
+    cameraRef.current.targetLat = clampedLat;
+    cameraRef.current.targetZoom = nextZoom;
     scheduleOnDemandLoop();
-  }, [selectedEvent, scheduleOnDemandLoop]);
+  }, [selectedId, selectedEvent, drawFrame, updateTelemetryDom, emitCurrentBbox, scheduleOnDemandLoop]);
+
+  // Attach non-passive wheel listener so preventDefault works cleanly without browser warnings
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const cam = cameraRef.current;
+      const delta = e.deltaY < 0 ? 0.14 : -0.14;
+      cam.zoom = Math.max(0.75, Math.min(3.0, Number((cam.zoom + delta).toFixed(2))));
+      updateTelemetryDom();
+      drawFrame();
+      emitCurrentBbox();
+    };
+    canvas.addEventListener('wheel', onWheel, { passive: false });
+    return () => canvas.removeEventListener('wheel', onWheel);
+  }, [drawFrame, emitCurrentBbox, updateTelemetryDom]);
 
   // Emit initial bbox when bbox filter is enabled
   useEffect(() => {
@@ -1299,14 +1386,52 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
     scheduleOnDemandLoop();
   };
 
-  const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
-    e.preventDefault();
+  const handlePointerCancel = () => {
     const cam = cameraRef.current;
-    const delta = e.deltaY < 0 ? 0.14 : -0.14;
-    cam.zoom = Math.max(0.75, Math.min(3.0, Number((cam.zoom + delta).toFixed(2))));
-    updateTelemetryDom();
-    drawFrame();
-    emitCurrentBbox();
+    cam.isDragging = false;
+    cam.velLon = 0;
+    cam.velLat = 0;
+  };
+
+  const handlePointerLeave = () => {
+    if (hoveredIdRef.current !== null) {
+      hoveredIdRef.current = null;
+      setHoveredEvent(null);
+    }
+  };
+
+  const handleCanvasKeyDown = (e: React.KeyboardEvent<HTMLCanvasElement>) => {
+    const cam = cameraRef.current;
+    const panStep = 14 / cam.zoom;
+    let handled = true;
+    if (e.key === 'ArrowLeft') {
+      cam.lon = normalizeLon(cam.lon - panStep);
+    } else if (e.key === 'ArrowRight') {
+      cam.lon = normalizeLon(cam.lon + panStep);
+    } else if (e.key === 'ArrowUp') {
+      cam.lat = clampLat(cam.lat + panStep);
+    } else if (e.key === 'ArrowDown') {
+      cam.lat = clampLat(cam.lat - panStep);
+    } else if (e.key === '+' || e.key === '=') {
+      cam.zoom = Math.min(3.0, Number((cam.zoom + 0.2).toFixed(2)));
+    } else if (e.key === '-' || e.key === '_') {
+      cam.zoom = Math.max(0.75, Number((cam.zoom - 0.2).toFixed(2)));
+    } else if (e.key === '0') {
+      handleResetGlobe();
+      e.preventDefault();
+      return;
+    } else {
+      handled = false;
+    }
+    if (handled) {
+      e.preventDefault();
+      cam.targetLon = null;
+      cam.targetLat = null;
+      cam.targetZoom = null;
+      updateTelemetryDom();
+      drawFrame();
+      emitCurrentBbox();
+    }
   };
 
   const handleZoomStep = (delta: number) => {
@@ -1320,11 +1445,37 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
 
   const handleResetGlobe = () => {
     soundFx.playFilter();
+    if (prefersReducedMotion()) {
+      cameraRef.current.lon = 25;
+      cameraRef.current.lat = 18;
+      cameraRef.current.zoom = 1.08;
+      cameraRef.current.targetLon = null;
+      cameraRef.current.targetLat = null;
+      cameraRef.current.targetZoom = null;
+      updateTelemetryDom();
+      drawFrame();
+      emitCurrentBbox();
+      return;
+    }
     cameraRef.current.targetLon = 25;
     cameraRef.current.targetLat = 18;
     cameraRef.current.targetZoom = 1.08;
     scheduleOnDemandLoop();
   };
+
+  const tooltipStyle = hoveredEvent
+    ? (() => {
+        const { width, height } = sizeRef.current;
+        const tooltipW = 280;
+        const tooltipH = 92;
+        const fitsRight = hoveredEvent.x + 16 + tooltipW <= width - 12;
+        const left = fitsRight
+          ? hoveredEvent.x + 16
+          : Math.max(12, hoveredEvent.x - tooltipW - 14);
+        const top = Math.max(12, Math.min(height - tooltipH - 12, hoveredEvent.y - 24));
+        return { left: `${left}px`, top: `${top}px` };
+      })()
+    : undefined;
 
   return (
     <div
@@ -1335,18 +1486,23 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
     >
       <canvas
         ref={canvasRef}
-        className="globe-canvas"
+        tabIndex={0}
+        role="application"
+        aria-label="Interactive 3D Earth Hazard Globe. Use arrow keys to rotate, plus or minus to zoom, 0 to reset."
+        className={`globe-canvas ${hoveredEvent ? 'globe-canvas-pointer' : ''}`}
         data-testid="globe-canvas"
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
-        onWheel={handleWheel}
+        onPointerCancel={handlePointerCancel}
+        onPointerLeave={handlePointerLeave}
+        onKeyDown={handleCanvasKeyDown}
       />
 
       {/* Top-Left Telemetry & Render Engine Pill (Updated via DOM refs for 0 React re-renders during drag) */}
       <div className="globe-hud-top-left">
         <div className="globe-engine-pill" data-testid="render-mode-indicator">
-          <span ref={engineDotRef} className="engine-dot engine-dot-idle" />
+          <span ref={engineDotRef} className="engine-dot engine-dot-idle" aria-hidden="true" />
           <span ref={engineTextRef}>On-Demand 3D (Idle — ~0% GPU)</span>
         </div>
         <div ref={telemetryPillRef} className="globe-coords-pill mono-text">
@@ -1354,13 +1510,28 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
         </div>
       </div>
 
-      {/* Bottom-Left Category Legend (Color + Icon for NFR-06 Accessibility) */}
-      <div className="globe-legend" aria-label="Hazard Category Legend">
+      {/* Bottom-Left Category Legend (Clickable filter shortcuts + Color & Icon for NFR-06 Accessibility) */}
+      <div className="globe-legend" role="group" aria-label="Hazard Category Legend">
         {Object.values(CATEGORY_MAP)
           .slice(0, 5)
           .map((cat) => {
             const Icon = cat.Icon;
-            return (
+            const isActive = activeCategory === cat.id;
+            return onSelectCategory ? (
+              <button
+                key={cat.id}
+                type="button"
+                className={`legend-item legend-item-btn ${isActive ? 'legend-item-active' : ''}`}
+                aria-pressed={isActive}
+                onClick={() => onSelectCategory(cat.id)}
+                title={`Filter by ${cat.label}`}
+              >
+                <span className="legend-swatch" style={{ backgroundColor: cat.color }}>
+                  <Icon size={11} />
+                </span>
+                <span className="legend-label">{cat.label}</span>
+              </button>
+            ) : (
               <div key={cat.id} className="legend-item">
                 <span className="legend-swatch" style={{ backgroundColor: cat.color }}>
                   <Icon size={11} />
@@ -1378,7 +1549,7 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
           className="globe-ctrl-btn"
           onClick={() => handleZoomStep(0.2)}
           aria-label="Zoom In Globe"
-          title="Zoom In"
+          title="Zoom In (+)"
         >
           +
         </button>
@@ -1387,7 +1558,7 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
           className="globe-ctrl-btn"
           onClick={() => handleZoomStep(-0.2)}
           aria-label="Zoom Out Globe"
-          title="Zoom Out"
+          title="Zoom Out (-)"
         >
           −
         </button>
@@ -1396,7 +1567,7 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
           className="globe-ctrl-btn globe-ctrl-reset"
           onClick={handleResetGlobe}
           aria-label="Reset Globe Camera"
-          title="Reset Camera Orientation"
+          title="Reset Camera Orientation (0)"
         >
           Reset
         </button>
@@ -1404,19 +1575,13 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
 
       {/* Hover Tooltip */}
       {hoveredEvent && (
-        <div
-          className="globe-tooltip"
-          style={{
-            left: `${Math.min(hoveredEvent.x + 14, 520)}px`,
-            top: `${Math.max(hoveredEvent.y - 24, 16)}px`,
-          }}
-        >
+        <div className="globe-tooltip" style={tooltipStyle}>
           <div className="globe-tooltip-header">
             <span
               className="globe-tooltip-cat"
               style={{ color: getCategoryMeta(hoveredEvent.event.category).color }}
             >
-              {getCategoryMeta(hoveredEvent.event.category).shortLabel.toUpperCase()}
+              {getCategoryMeta(hoveredEvent.event.category).shortLabel}
             </span>
             <span className="mono-text">{hoveredEvent.event.id}</span>
           </div>
@@ -1428,4 +1593,4 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = ({
       )}
     </div>
   );
-};
+});

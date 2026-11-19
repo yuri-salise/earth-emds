@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  fetchHealthStatus,
   filterEventsClientSide,
   normalizeArticle,
   normalizeEvent,
@@ -9,12 +10,15 @@ import {
 import { FALLBACK_EVENTS } from '../api/fallbackData';
 import App from '../App';
 import { CountryCard } from '../components/CountryCard';
+import { getRepresentativeCoord, safeExternalUrl } from '../utils/categories';
 import { soundFx } from '../utils/soundFx';
 
 describe('EARTH EMDS Frontend Application & Components', () => {
   beforeEach(() => {
     window.localStorage.clear();
+    window.history.replaceState(null, '', '/');
     soundFx.setEnabled(true);
+    vi.restoreAllMocks();
     vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Simulated offline test mode'));
   });
 
@@ -142,7 +146,7 @@ describe('EARTH EMDS Frontend Application & Components', () => {
     });
 
     // Initially 3D Globe is mounted
-    expect(screen.getByTestId('globe-canvas')).toBeInTheDocument();
+    expect(await screen.findByTestId('globe-canvas')).toBeInTheDocument();
 
     const liteToggle = screen.getByTestId('lite-mode-toggle');
     fireEvent.click(liteToggle);
@@ -328,5 +332,122 @@ describe('EARTH EMDS Frontend Application & Components', () => {
       bbox: [115, 5, 140, 40], // East Asia / Western Pacific bbox (PHL, TWN, JPN)
     });
     expect(bboxFiltered.map((e) => e.id)).toEqual(['EONET_6402', 'EONET_6403']);
+  });
+
+  it('sorts ascending backend observations newest-first, computes unbiased polygon centroids, and checks full track bbox intersection', () => {
+    const normalized = normalizeEvent({
+      id: 'EONET_CHRONO',
+      title: 'Chronological Check',
+      category: 'Volcanoes',
+      status: 'open',
+      observations: [
+        {
+          observed_at: '2026-10-01T00:00:00Z',
+          geom: { type: 'Point', coordinates: [120.0, 14.0] },
+          magnitude_value: 2.0,
+          magnitude_unit: 'VEI',
+        },
+        {
+          observed_at: '2026-10-05T12:00:00Z',
+          geom: { type: 'Point', coordinates: [123.685, 13.257] },
+          magnitude_value: 3.2,
+          magnitude_unit: 'VEI',
+        },
+      ],
+      countries: [],
+    });
+
+    expect(normalized.observations[0].observed_at).toBe('2026-10-05T12:00:00Z');
+    expect(normalized.observations[0].magnitude_value).toBe(3.2);
+
+    // Closed square [0..10, 0..10] centroid must be exactly [5, 5], not skewed toward [0, 0]
+    const centroid = getRepresentativeCoord({
+      type: 'Polygon',
+      coordinates: [
+        [
+          [0, 0],
+          [10, 0],
+          [10, 10],
+          [0, 10],
+          [0, 0],
+        ],
+      ],
+    });
+    expect(centroid).toEqual([5, 5]);
+
+    // LineString track whose first waypoint [131.5, 13.8] falls inside bbox [130, 12, 133, 15]
+    // even though its last waypoint [122.3, 17.4] is outside must still match
+    const trackMatches = filterEventsClientSide(FALLBACK_EVENTS, {
+      q: '',
+      category: 'all',
+      status: 'all',
+      start_date: '',
+      end_date: '',
+      useBbox: true,
+      bbox: [130, 12, 133, 15],
+    });
+    expect(trackMatches.map((e) => e.id)).toContain('EONET_6402');
+
+    // Inverted date window returns empty cleanly
+    const invertedDates = filterEventsClientSide(FALLBACK_EVENTS, {
+      q: '',
+      category: 'all',
+      status: 'all',
+      start_date: '2026-10-20',
+      end_date: '2026-10-10',
+      useBbox: false,
+      bbox: null,
+    });
+    expect(invertedDates).toEqual([]);
+  });
+
+  it('blocks unsafe URL schemes and maps backend sync_runs/cached_fallback into HealthStatus', async () => {
+    expect(safeExternalUrl('javascript:alert(1)')).toBeNull();
+    expect(safeExternalUrl('https://eonet.gsfc.nasa.gov/api/v3')).toBe(
+      'https://eonet.gsfc.nasa.gov/api/v3'
+    );
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          status: 'ok',
+          last_updated: '2026-10-15T00:00:00Z',
+          cached_fallback: true,
+          sync_runs: [
+            {
+              provider: 'eonet',
+              started_at: '2026-10-15T00:00:00Z',
+              ended_at: '2026-10-15T00:00:02Z',
+              outcome: 'partial',
+              records_processed: 26,
+              error_class: 'ConnectTimeout',
+            },
+          ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      )
+    );
+
+    const health = await fetchHealthStatus();
+    expect(health.cache_freshness).toBe('cached_fallback');
+    expect(health.providers.eonet.outcome).toBe('partial');
+  });
+
+  it('closes disclaimers modal on Escape without dismissing an open detail drawer', async () => {
+    render(<App />);
+
+    const firstEvent = await screen.findByTestId('event-list-item-EONET_6401');
+    fireEvent.click(firstEvent);
+    expect(await screen.findByTestId('event-detail-drawer')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('disclaimers-trigger'));
+    expect(screen.getByTestId('disclaimers-modal')).toBeInTheDocument();
+
+    // First Escape closes only the modal; drawer stays open
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => {
+      expect(screen.queryByTestId('disclaimers-modal')).not.toBeInTheDocument();
+    });
+    expect(screen.getByTestId('event-detail-drawer')).toBeInTheDocument();
   });
 });
