@@ -8,9 +8,15 @@ import {
   HazardEvent,
   HealthStatus,
   MatchedCountry,
+  ProviderSyncInfo,
   ScoredArticle,
 } from '../types/domain';
-import { getCategoryMeta, getRepresentativeCoord, isCategoryMatch } from '../utils/categories';
+import {
+  geometryIntersectsBbox,
+  getCategoryMeta,
+  getLatestObservation,
+  isCategoryMatch,
+} from '../utils/categories';
 import { FALLBACK_ARTICLES_BY_EVENT, FALLBACK_EVENTS, FALLBACK_HEALTH } from './fallbackData';
 
 const DEFAULT_API_BASE_URL = 'http://127.0.0.1:8000/api/v1';
@@ -80,11 +86,14 @@ function normalizeObservation(raw: unknown, index: number): EventObservation {
         ? obj.magnitudeUnit
         : null;
 
+  const parsedMag =
+    magVal === null || magVal === undefined || magVal === '' ? null : Number(magVal);
+
   return {
     id: (obj.id as string | number) ?? index,
     observed_at: String(obj.observed_at || obj.observedAt || obj.date || new Date().toISOString()),
     geom: normalizeGeometry(geomSource),
-    magnitude_value: magVal === null || magVal === undefined ? null : Number(magVal),
+    magnitude_value: parsedMag !== null && Number.isFinite(parsedMag) ? parsedMag : null,
     magnitude_unit: magUnit === null || magUnit === undefined ? null : String(magUnit),
   };
 }
@@ -174,18 +183,32 @@ export function normalizeEvent(raw: unknown): HazardEvent {
   const statusRaw = String(obj.status || 'open').toLowerCase();
   const status: 'open' | 'closed' = statusRaw === 'closed' ? 'closed' : 'open';
 
+  const normalizedObservations = obsRaw
+    .map((o, idx) => normalizeObservation(o, idx))
+    .sort((a, b) => {
+      const ams = Date.parse(a.observed_at);
+      const bms = Date.parse(b.observed_at);
+      if (Number.isNaN(ams) || Number.isNaN(bms)) return 0;
+      return bms - ams;
+    });
+
   return {
     id: String(obj.id || ''),
     title: String(obj.title || 'Untitled Event').trim().replace(/\s+/g, ' '),
-    category: String(obj.category || 'wildfires'),
+    category: String(obj.category || 'Uncategorized'),
     status,
     closed_at: obj.closed_at ? String(obj.closed_at) : obj.closed ? String(obj.closed) : null,
     sources: normalizeSources(obj.sources),
-    first_seen_at: String(obj.first_seen_at || obj.last_updated_at || new Date().toISOString()),
+    first_seen_at: String(
+      obj.first_seen_at ||
+        normalizedObservations[normalizedObservations.length - 1]?.observed_at ||
+        obj.last_updated_at ||
+        new Date().toISOString()
+    ),
     last_updated_at: String(
       obj.last_updated_at || obj.last_updated || obj.first_seen_at || new Date().toISOString()
     ),
-    observations: obsRaw.map((o, idx) => normalizeObservation(o, idx)),
+    observations: normalizedObservations,
     countries: countriesRaw.map((c) => normalizeCountry(c)),
   };
 }
@@ -231,6 +254,13 @@ export function filterEventsClientSide(
   events: HazardEvent[],
   filters: EventFilters
 ): HazardEvent[] {
+  const startMs = filters.start_date ? Date.parse(filters.start_date + 'T00:00:00Z') : Number.NaN;
+  const endMs = filters.end_date ? Date.parse(filters.end_date + 'T23:59:59.999Z') : Number.NaN;
+  if (!Number.isNaN(startMs) && !Number.isNaN(endMs) && startMs > endMs) {
+    return [];
+  }
+  const qLower = filters.q.trim().toLowerCase();
+
   return events.filter((ev) => {
     if (filters.category && filters.category !== 'all') {
       if (!isCategoryMatch(ev.category, filters.category)) {
@@ -242,14 +272,14 @@ export function filterEventsClientSide(
         return false;
       }
     }
-    if (filters.q.trim()) {
-      const qLower = filters.q.trim().toLowerCase();
+    if (qLower) {
+      const meta = getCategoryMeta(ev.category);
       const inTitle = ev.title.toLowerCase().includes(qLower);
       const inId = ev.id.toLowerCase().includes(qLower);
       const inCategory =
         ev.category.toLowerCase().includes(qLower) ||
-        getCategoryMeta(ev.category).label.toLowerCase().includes(qLower) ||
-        getCategoryMeta(ev.category).id.toLowerCase().includes(qLower);
+        meta.label.toLowerCase().includes(qLower) ||
+        meta.id.toLowerCase().includes(qLower);
       const inCountries = ev.countries.some(
         (c) =>
           c.name.toLowerCase().includes(qLower) ||
@@ -260,41 +290,33 @@ export function filterEventsClientSide(
         return false;
       }
     }
-    if (filters.start_date) {
-      const startMs = Date.parse(filters.start_date + 'T00:00:00Z');
-      if (!Number.isNaN(startMs)) {
-        const latestObs = ev.observations[0]?.observed_at || ev.last_updated_at;
-        const evMs = Date.parse(latestObs);
-        if (!Number.isNaN(evMs) && evMs < startMs) {
+    if (!Number.isNaN(startMs) || !Number.isNaN(endMs)) {
+      const latestObs = getLatestObservation(ev.observations)?.observed_at || ev.last_updated_at;
+      const evMs = Date.parse(latestObs);
+      if (!Number.isNaN(evMs)) {
+        if (!Number.isNaN(startMs) && evMs < startMs) {
           return false;
         }
-      }
-    }
-    if (filters.end_date) {
-      const endMs = Date.parse(filters.end_date + 'T23:59:59Z');
-      if (!Number.isNaN(endMs)) {
-        const latestObs = ev.observations[0]?.observed_at || ev.last_updated_at;
-        const evMs = Date.parse(latestObs);
-        if (!Number.isNaN(evMs) && evMs > endMs) {
+        if (!Number.isNaN(endMs) && evMs > endMs) {
           return false;
         }
       }
     }
     if (filters.useBbox && filters.bbox) {
-      const [minLon, minLat, maxLon, maxLat] = filters.bbox;
-      const coord = getRepresentativeCoord(ev.observations[0]?.geom);
-      if (coord) {
-        const [lon, lat] = coord;
-        if (lon < minLon || lon > maxLon || lat < minLat || lat > maxLat) {
-          return false;
-        }
+      const bbox = filters.bbox;
+      const hitsBbox = ev.observations.some((obs) => geometryIntersectsBbox(obs.geom, bbox));
+      if (!hitsBbox) {
+        return false;
       }
     }
     return true;
   });
 }
 
-export async function fetchEvents(filters: EventFilters): Promise<EventsListResponse> {
+export async function fetchEvents(
+  filters: EventFilters,
+  signal?: AbortSignal
+): Promise<EventsListResponse> {
   const baseUrl = getApiBaseUrl();
   const params = new URLSearchParams();
 
@@ -315,6 +337,7 @@ export async function fetchEvents(filters: EventFilters): Promise<EventsListResp
     const res = await fetch(url, {
       method: 'GET',
       headers: { Accept: 'application/json' },
+      signal,
     });
     if (!res.ok) {
       throw new Error(`HTTP ${res.status}`);
@@ -330,25 +353,30 @@ export async function fetchEvents(filters: EventFilters): Promise<EventsListResp
             ? payload.data
             : [];
 
-    const normalized = rawList.map((item: unknown) => normalizeEvent(item));
-    const filtered = filterEventsClientSide(normalized, filters);
+    const normalized: HazardEvent[] = rawList.map((item: unknown) => normalizeEvent(item));
+    const isFallbackCache =
+      payload.cache_freshness === 'cached_fallback' || payload.cached_fallback === true;
 
     return {
-      items: filtered,
-      total: typeof payload.total === 'number' ? payload.total : filtered.length,
+      items: normalized,
+      total: typeof payload.total === 'number' ? payload.total : normalized.length,
       last_updated_at: String(
         payload.last_updated_at ||
           payload.last_updated ||
           normalized[0]?.last_updated_at ||
           FALLBACK_HEALTH.last_updated_at
       ),
-      cache_freshness:
-        payload.cache_freshness === 'cached_fallback' || payload.cache_freshness === 'stale'
-          ? payload.cache_freshness
+      cache_freshness: isFallbackCache
+        ? 'cached_fallback'
+        : payload.cache_freshness === 'stale'
+          ? 'stale'
           : 'fresh',
       is_demo_fallback: false,
     };
-  } catch {
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw err;
+    }
     const filteredFallback = filterEventsClientSide(FALLBACK_EVENTS, filters);
     return {
       items: filteredFallback,
@@ -360,30 +388,55 @@ export async function fetchEvents(filters: EventFilters): Promise<EventsListResp
   }
 }
 
-export async function fetchEventDetail(eventId: string): Promise<HazardEvent | null> {
+export async function triggerBackendSync(signal?: AbortSignal): Promise<boolean> {
+  const baseUrl = getApiBaseUrl();
+  try {
+    const res = await fetch(`${baseUrl}/sync`, {
+      method: 'POST',
+      headers: { Accept: 'application/json' },
+      signal,
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function fetchEventDetail(
+  eventId: string,
+  signal?: AbortSignal
+): Promise<HazardEvent | null> {
   const baseUrl = getApiBaseUrl();
   try {
     const res = await fetch(`${baseUrl}/events/${encodeURIComponent(eventId)}`, {
       method: 'GET',
       headers: { Accept: 'application/json' },
+      signal,
     });
     if (!res.ok) {
       throw new Error(`HTTP ${res.status}`);
     }
     const payload = await res.json();
     return normalizeEvent(payload);
-  } catch {
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw err;
+    }
     const fallback = FALLBACK_EVENTS.find((e) => e.id === eventId) || null;
     return fallback;
   }
 }
 
-export async function fetchEventArticles(eventId: string): Promise<ScoredArticle[]> {
+export async function fetchEventArticles(
+  eventId: string,
+  signal?: AbortSignal
+): Promise<ScoredArticle[]> {
   const baseUrl = getApiBaseUrl();
   try {
     const res = await fetch(`${baseUrl}/events/${encodeURIComponent(eventId)}/articles`, {
       method: 'GET',
       headers: { Accept: 'application/json' },
+      signal,
     });
     if (!res.ok) {
       throw new Error(`HTTP ${res.status}`);
@@ -400,40 +453,78 @@ export async function fetchEventArticles(eventId: string): Promise<ScoredArticle
       .map((item: unknown) => normalizeArticle(item))
       .sort((a: ScoredArticle, b: ScoredArticle) => b.score - a.score);
     return articles;
-  } catch {
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw err;
+    }
     return FALLBACK_ARTICLES_BY_EVENT[eventId] || [];
   }
 }
 
-export async function fetchHealthStatus(): Promise<HealthStatus> {
+function extractProvidersFromHealth(payload: Record<string, unknown>): HealthStatus['providers'] {
+  const providersObj =
+    payload.providers && typeof payload.providers === 'object'
+      ? (payload.providers as Record<string, ProviderSyncInfo>)
+      : {};
+
+  const fromSyncRuns: Record<string, ProviderSyncInfo> = {};
+  if (Array.isArray(payload.sync_runs)) {
+    for (const rawRun of payload.sync_runs) {
+      if (!rawRun || typeof rawRun !== 'object') continue;
+      const r = rawRun as Record<string, unknown>;
+      const provider = String(r.provider || '');
+      if (provider && !fromSyncRuns[provider]) {
+        fromSyncRuns[provider] = {
+          outcome: String(r.outcome || 'unknown'),
+          last_sync_at: r.ended_at ? String(r.ended_at) : r.started_at ? String(r.started_at) : null,
+          records_processed:
+            typeof r.records_processed === 'number' ? r.records_processed : undefined,
+          error_class: r.error_class ? String(r.error_class) : null,
+        };
+      }
+    }
+  }
+
+  return {
+    eonet: providersObj.eonet || fromSyncRuns.eonet || FALLBACK_HEALTH.providers.eonet,
+    rest_countries:
+      providersObj.rest_countries ||
+      fromSyncRuns.rest_countries ||
+      FALLBACK_HEALTH.providers.rest_countries,
+    newsapi: providersObj.newsapi || fromSyncRuns.newsapi || FALLBACK_HEALTH.providers.newsapi,
+  };
+}
+
+export async function fetchHealthStatus(signal?: AbortSignal): Promise<HealthStatus> {
   const baseUrl = getApiBaseUrl();
   try {
     const res = await fetch(`${baseUrl}/health`, {
       method: 'GET',
       headers: { Accept: 'application/json' },
+      signal,
     });
     if (!res.ok) {
       throw new Error(`HTTP ${res.status}`);
     }
-    const p = await res.json();
-    const providersObj = p.providers && typeof p.providers === 'object' ? p.providers : {};
+    const p = (await res.json()) as Record<string, unknown>;
+    const isFallbackCache = p.cache_freshness === 'cached_fallback' || p.cached_fallback === true;
     return {
       status: p.status === 'degraded' || p.status === 'offline' ? p.status : 'healthy',
-      cache_freshness:
-        p.cache_freshness === 'cached_fallback' || p.cache_freshness === 'stale'
-          ? p.cache_freshness
+      cache_freshness: isFallbackCache
+        ? 'cached_fallback'
+        : p.cache_freshness === 'stale'
+          ? 'stale'
           : 'fresh',
       last_updated_at: String(
         p.last_updated_at || p.last_updated || FALLBACK_HEALTH.last_updated_at
       ),
-      providers: {
-        eonet: providersObj.eonet || FALLBACK_HEALTH.providers.eonet,
-        rest_countries: providersObj.rest_countries || FALLBACK_HEALTH.providers.rest_countries,
-        newsapi: providersObj.newsapi || FALLBACK_HEALTH.providers.newsapi,
-      },
+      providers: extractProvidersFromHealth(p),
       is_demo_fallback: false,
     };
-  } catch {
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw err;
+    }
     return {
       ...FALLBACK_HEALTH,
       status: 'degraded',

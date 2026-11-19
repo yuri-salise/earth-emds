@@ -1,5 +1,5 @@
 import React from 'react';
-import { GeoJsonGeometry } from '../types/domain';
+import { EventObservation, GeoJsonGeometry } from '../types/domain';
 
 export interface CategoryMeta {
   id: string;
@@ -298,18 +298,107 @@ export function getRepresentativeCoord(geom: GeoJsonGeometry | undefined): [numb
     geom.coordinates[0].length > 0
   ) {
     const ring = geom.coordinates[0];
+    // Exclude duplicated closing vertex in RFC 7946 linear rings so centroid is unbiased
+    const last = ring[ring.length - 1];
+    const isClosed =
+      ring.length > 1 && Number(ring[0][0]) === Number(last[0]) && Number(ring[0][1]) === Number(last[1]);
+    const count = isClosed ? ring.length - 1 : ring.length;
     let sumLon = 0;
     let sumLat = 0;
-    for (const pt of ring) {
-      sumLon += Number(pt[0]);
-      sumLat += Number(pt[1]);
+    for (let i = 0; i < count; i++) {
+      sumLon += Number(ring[i][0]);
+      sumLat += Number(ring[i][1]);
     }
     return [
-      Number((sumLon / ring.length).toFixed(4)),
-      Number((sumLat / ring.length).toFixed(4)),
+      Number((sumLon / count).toFixed(4)),
+      Number((sumLat / count).toFixed(4)),
     ];
   }
   return null;
+}
+
+export function getLatestObservation(
+  observations: EventObservation[] | undefined
+): EventObservation | undefined {
+  if (!observations || observations.length === 0) return undefined;
+  let latest = observations[0];
+  let latestMs = Date.parse(latest.observed_at);
+  for (let i = 1; i < observations.length; i++) {
+    const ms = Date.parse(observations[i].observed_at);
+    if (!Number.isNaN(ms) && (Number.isNaN(latestMs) || ms > latestMs)) {
+      latest = observations[i];
+      latestMs = ms;
+    }
+  }
+  return latest;
+}
+
+export function getEarliestObservation(
+  observations: EventObservation[] | undefined
+): EventObservation | undefined {
+  if (!observations || observations.length === 0) return undefined;
+  let earliest = observations[0];
+  let earliestMs = Date.parse(earliest.observed_at);
+  for (let i = 1; i < observations.length; i++) {
+    const ms = Date.parse(observations[i].observed_at);
+    if (!Number.isNaN(ms) && (Number.isNaN(earliestMs) || ms < earliestMs)) {
+      earliest = observations[i];
+      earliestMs = ms;
+    }
+  }
+  return earliest;
+}
+
+export function geometryIntersectsBbox(
+  geom: GeoJsonGeometry | undefined,
+  bbox: [number, number, number, number]
+): boolean {
+  if (!geom) return false;
+  const [minLon, minLat, maxLon, maxLat] = bbox;
+  let gMinLon = Infinity;
+  let gMaxLon = -Infinity;
+  let gMinLat = Infinity;
+  let gMaxLat = -Infinity;
+
+  const visit = (lon: number, lat: number) => {
+    if (!Number.isFinite(lon) || !Number.isFinite(lat)) return;
+    if (lon < gMinLon) gMinLon = lon;
+    if (lon > gMaxLon) gMaxLon = lon;
+    if (lat < gMinLat) gMinLat = lat;
+    if (lat > gMaxLat) gMaxLat = lat;
+  };
+
+  if (geom.type === 'Point' && geom.coordinates.length >= 2) {
+    visit(Number(geom.coordinates[0]), Number(geom.coordinates[1]));
+  } else if (geom.type === 'LineString') {
+    for (const pt of geom.coordinates) {
+      if (pt.length >= 2) visit(Number(pt[0]), Number(pt[1]));
+    }
+  } else if (geom.type === 'Polygon') {
+    for (const ring of geom.coordinates) {
+      for (const pt of ring) {
+        if (pt.length >= 2) visit(Number(pt[0]), Number(pt[1]));
+      }
+    }
+  }
+
+  if (gMinLon === Infinity) return false;
+  return gMaxLon >= minLon && gMinLon <= maxLon && gMaxLat >= minLat && gMinLat <= maxLat;
+}
+
+export function safeExternalUrl(rawUrl: string | null | undefined): string | null {
+  if (!rawUrl || typeof rawUrl !== 'string') return null;
+  const trimmed = rawUrl.trim();
+  if (!trimmed) return null;
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
+      return parsed.href;
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 export function formatWgs84([lon, lat]: [number, number]): string {
@@ -318,12 +407,28 @@ export function formatWgs84([lon, lat]: [number, number]): string {
   return `${Math.abs(lat).toFixed(2)}°${latDir}, ${Math.abs(lon).toFixed(2)}°${lonDir} [${lon.toFixed(2)}, ${lat.toFixed(2)}]`;
 }
 
+export function formatCompactWgs84([lon, lat]: [number, number]): string {
+  const latDir = lat >= 0 ? 'N' : 'S';
+  const lonDir = lon >= 0 ? 'E' : 'W';
+  return `${Math.abs(lat).toFixed(2)}°${latDir}, ${Math.abs(lon).toFixed(2)}°${lonDir}`;
+}
+
+const UTC_DATE_FORMATTER = new Intl.DateTimeFormat('sv-SE', {
+  timeZone: 'UTC',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+});
+
 export function formatUtcTimestamp(isoString: string | null | undefined): string {
   if (!isoString) return 'Unknown time';
   try {
     const date = new Date(isoString);
     if (Number.isNaN(date.getTime())) return isoString;
-    return date.toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
+    return `${UTC_DATE_FORMATTER.format(date)} UTC`;
   } catch {
     return String(isoString);
   }
