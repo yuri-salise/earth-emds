@@ -118,3 +118,20 @@ class TestArticleScorer:
         assert len(ranked) == 1
         assert ranked[0]["canonical_url"] == "https://news.example.com/story-1"
         assert ranked[0]["score"] == 100
+
+    def test_does_not_award_category_points_for_mismatched_hazard_type(self):
+        res = score_candidate_article(
+            article={
+                "title": "River flooding disrupts regional transport",
+                "description": "Heavy inundation reported across coastal lowlands.",
+                "url": "https://news.example.com/flood-only",
+                "publisher": "Wire",
+                "published_at": "2026-08-01T00:00:00Z",
+            },
+            event_title="Park Fire Perimeter",
+            event_category="Wildfires",
+            country_names=["United States"],
+            event_dates=["2026-10-04T00:00:00Z"],
+        )
+        assert res["score"] == 0
+        assert res["match_reasons"] == []

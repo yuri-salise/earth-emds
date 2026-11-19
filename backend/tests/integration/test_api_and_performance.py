@@ -36,6 +36,9 @@ class TestApiIntegrationAndSecurity:
         data = resp.json()
         assert data["status"] in ("ok", "degraded")
         assert "last_updated" in data
+        assert "last_updated_at" in data
+        assert data["cache_freshness"] in ("fresh", "cached_fallback")
+        assert set(data["providers"].keys()) >= {"eonet", "rest_countries", "newsapi"}
         assert "disclaimers" in data
         assert "newsapi_budget" in data
 
@@ -153,6 +156,26 @@ class TestApiIntegrationAndSecurity:
         test_db.upsert_event_with_observations(event_payload)
         ev2 = test_db.get_event_by_id("EONET_IDEMPOTENT_01")
         assert len(ev2["observations"]) == 2
+        assert ev2["magnitude_value"] == 2.5
+
+        # Upserting only an older observation must not regress latest_observed_at or magnitude
+        older_only = {
+            **event_payload,
+            "observations": [event_payload["observations"][0]],
+        }
+        test_db.upsert_event_with_observations(older_only)
+        ev3 = test_db.get_event_by_id("EONET_IDEMPOTENT_01")
+        assert ev3["latest_observed_at"] == "2026-10-02T00:00:00Z"
+        assert ev3["magnitude_value"] == 2.5
+
+    def test_search_escapes_like_wildcards_and_matches_event_id(self, client):
+        wildcard_resp = client.get("/api/v1/events", params={"q": "%%%"})
+        assert wildcard_resp.status_code == 200
+        assert wildcard_resp.json()["total"] == 0
+
+        id_resp = client.get("/api/v1/events", params={"q": "EONET_PHL_MAYON_2026"})
+        assert id_resp.status_code == 200
+        assert any(ev["id"] == "EONET_PHL_MAYON_2026" for ev in id_resp.json()["items"])
 
     def test_2000_events_bbox_and_filter_benchmark_under_2_seconds(self, test_db, client):
         # Bulk insert 2,000 events with spatial coordinates across the globe

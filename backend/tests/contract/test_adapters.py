@@ -10,6 +10,7 @@ from app.adapters.rest_countries import (
 )
 from app.adapters.newsapi import (
     NewsQuotaTracker,
+    _parse_rss_pubdate,
     fetch_event_news,
 )
 from app.services.spatial import (
@@ -88,11 +89,37 @@ class TestEonetContractAndSpatial:
             for m in coastal_matches
         )
 
-        # 3. Deep open ocean (Point Nemo: -123.39, -48.87) -> no country match
+        # 3. High-latitude coastal proximity (~80 km west of Iceland at 65.5N, > 1.5 deg lon)
+        iceland_offshore = resolve_event_countries(
+            [{"type": "Point", "coordinates": [-26.2, 65.5]}]
+        )
+        assert any(
+            m["iso_a3"] == "ISL" and m["match_method"] == "coastal_proximity"
+            for m in iceland_offshore
+        )
+
+        # 4. Deep open ocean (Point Nemo: -123.39, -48.87) -> no country match
         ocean_matches = resolve_event_countries(
             [{"type": "Point", "coordinates": [-123.39, -48.87]}]
         )
         assert ocean_matches == []
+
+    def test_unknown_category_not_misclassified_as_severe_storms(self):
+        parsed = parse_eonet_event(
+            {
+                "id": "EONET_NO_CAT",
+                "title": "Unknown Anomaly",
+                "categories": [],
+                "geometry": [
+                    {"date": "2026-10-01T00:00:00Z", "type": "Point", "coordinates": [0.0, 0.0]}
+                ],
+            }
+        )
+        assert parsed["category"] == "Uncategorized"
+
+    def test_parses_rss_pubdate_to_utc_iso(self):
+        assert _parse_rss_pubdate("Mon, 05 Oct 2026 08:30:00 GMT") == "2026-10-05T08:30:00Z"
+        assert _parse_rss_pubdate("invalid-date") is None
 
 
 class TestRestCountriesContract:
