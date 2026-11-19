@@ -72,6 +72,8 @@ def create_app(
         finally:
             if bg_task is not None:
                 bg_task.cancel()
+            if db_instance is None:
+                db.close()
 
     app = FastAPI(
         title="Earth Event & Disaster Monitoring System API",
@@ -104,21 +106,30 @@ def create_app(
     # Per-IP sliding window rate limiter + mandatory HTTP security headers
     ip_buckets: dict[str, deque[float]] = defaultdict(deque)
     rate_limit = max(30, settings.rate_limit_per_minute)
+    sync_lock = asyncio.Lock()
 
     @app.middleware("http")
     async def security_and_rate_limit_middleware(request: Request, call_next):
-        client_ip = request.client.host if request.client else "127.0.0.1"
-        now = time.monotonic()
-        bucket = ip_buckets[client_ip]
-        while bucket and (now - bucket[0]) > 60.0:
-            bucket.popleft()
-        if len(bucket) >= rate_limit:
-            return Response(
-                content='{"detail":"Rate limit exceeded. Please retry in a minute."}',
-                status_code=429,
-                media_type="application/json",
-            )
-        bucket.append(now)
+        if request.method != "OPTIONS":
+            client_ip = request.client.host if request.client else "127.0.0.1"
+            now = time.monotonic()
+            bucket = ip_buckets[client_ip]
+            while bucket and (now - bucket[0]) > 60.0:
+                bucket.popleft()
+            if len(bucket) >= rate_limit:
+                return Response(
+                    content='{"detail":"Rate limit exceeded. Please retry in a minute."}',
+                    status_code=429,
+                    media_type="application/json",
+                )
+            bucket.append(now)
+            # Evict stale IP buckets to prevent unbounded memory growth
+            if len(ip_buckets) > 512:
+                stale_ips = [
+                    ip for ip, q in ip_buckets.items() if not q or (now - q[-1]) > 60.0
+                ]
+                for ip in stale_ips:
+                    ip_buckets.pop(ip, None)
 
         response: Response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -199,7 +210,8 @@ def create_app(
 
     @app.post("/api/v1/sync")
     async def trigger_sync(offline: bool = Query(default=False)):
-        result = await db.run_live_sync(force_offline=offline)
+        async with sync_lock:
+            result = await db.run_live_sync(force_offline=offline)
         return {
             **result,
             "disclaimers": DISCLAIMERS,

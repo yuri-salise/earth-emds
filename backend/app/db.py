@@ -74,17 +74,27 @@ class Database:
     def __init__(self, sqlite_path: str | None = None) -> None:
         self.sqlite_path = _resolve_writable_sqlite_path(sqlite_path)
         self._lock = threading.RLock()
+        self._conn: sqlite3.Connection | None = None
         self.quota_tracker = NewsQuotaTracker(redis_url="")
         self.last_sync_at: str = datetime.now(timezone.utc).isoformat()
         self.cached_fallback_active: bool = False
 
     def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.sqlite_path, timeout=15.0, check_same_thread=False)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL;")
-        conn.execute("PRAGMA synchronous=NORMAL;")
-        conn.execute("PRAGMA foreign_keys=ON;")
-        return conn
+        if self._conn is None:
+            conn = sqlite3.connect(self.sqlite_path, timeout=15.0, check_same_thread=False)
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA journal_mode=WAL;")
+            conn.execute("PRAGMA synchronous=NORMAL;")
+            conn.execute("PRAGMA foreign_keys=ON;")
+            conn.execute("PRAGMA cache_size=-8000;")
+            self._conn = conn
+        return self._conn
+
+    def close(self) -> None:
+        with self._lock:
+            if self._conn is not None:
+                self._conn.close()
+                self._conn = None
 
     def init_schema(self) -> None:
         with self._lock, self._connect() as conn:
@@ -291,7 +301,7 @@ class Database:
                     min_lon, min_lat, max_lon, max_lat,
                     news_enriched_on_open, news_enriched_on_close
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)
                 ON CONFLICT(id) DO UPDATE SET
                     title = excluded.title,
                     category = excluded.category,
@@ -299,18 +309,26 @@ class Database:
                     closed_at = excluded.closed_at,
                     sources_json = excluded.sources_json,
                     last_updated_at = excluded.last_updated_at,
-                    latest_observed_at = excluded.latest_observed_at,
-                    latest_geom_json = excluded.latest_geom_json,
-                    latest_magnitude_value = excluded.latest_magnitude_value,
-                    latest_magnitude_unit = excluded.latest_magnitude_unit,
+                    latest_observed_at = CASE
+                        WHEN excluded.latest_observed_at >= event.latest_observed_at THEN excluded.latest_observed_at
+                        ELSE event.latest_observed_at
+                    END,
+                    latest_geom_json = CASE
+                        WHEN excluded.latest_observed_at >= event.latest_observed_at THEN excluded.latest_geom_json
+                        ELSE event.latest_geom_json
+                    END,
+                    latest_magnitude_value = CASE
+                        WHEN excluded.latest_observed_at >= event.latest_observed_at THEN excluded.latest_magnitude_value
+                        ELSE event.latest_magnitude_value
+                    END,
+                    latest_magnitude_unit = CASE
+                        WHEN excluded.latest_observed_at >= event.latest_observed_at THEN excluded.latest_magnitude_unit
+                        ELSE event.latest_magnitude_unit
+                    END,
                     min_lon = MIN(event.min_lon, excluded.min_lon),
                     min_lat = MIN(event.min_lat, excluded.min_lat),
                     max_lon = MAX(event.max_lon, excluded.max_lon),
-                    max_lat = MAX(event.max_lat, excluded.max_lat),
-                    news_enriched_on_close = CASE
-                        WHEN excluded.status = 'closed' THEN 1
-                        ELSE event.news_enriched_on_close
-                    END
+                    max_lat = MAX(event.max_lat, excluded.max_lat)
                 """,
                 (
                     event_data["id"],
@@ -319,7 +337,7 @@ class Database:
                     event_data["status"],
                     event_data.get("closed_at"),
                     json.dumps(event_data.get("sources") or []),
-                    now_iso,
+                    observations[0]["observed_at"],
                     now_iso,
                     latest_obs["observed_at"],
                     json.dumps(latest_obs["geom"]),
@@ -329,7 +347,6 @@ class Database:
                     bbox[1],
                     bbox[2],
                     bbox[3],
-                    1 if event_data["status"] == "closed" else 0,
                 ),
             )
 
@@ -356,6 +373,7 @@ class Database:
 
             if resolve_spatial_and_news:
                 country_matches = resolve_event_countries(geoms)
+                conn.execute("DELETE FROM event_country WHERE event_id = ?", (event_data["id"],))
                 for cm in country_matches:
                     if cm["iso_a3"] == "-99":
                         continue
@@ -372,24 +390,29 @@ class Database:
                         (event_data["id"], cm["iso_a3"], cm["match_method"]),
                     )
 
-                country_names = [cm["name"] for cm in country_matches]
-                event_dates = [o["observed_at"] for o in observations]
-                curated_candidates = _build_curated_fallback_articles(
-                    event_id=event_data["id"],
-                    event_title=event_data["title"],
-                    event_category=event_data["category"],
-                    country_names=country_names,
-                    event_dates=event_dates,
-                )
-                scored_articles = score_and_rank_articles(
-                    articles=curated_candidates,
-                    event_title=event_data["title"],
-                    event_category=event_data["category"],
-                    country_names=country_names,
-                    event_dates=event_dates,
-                    min_score=25,
-                )
-                self._upsert_scored_articles_in_tx(conn, event_data["id"], scored_articles, now_iso)
+                existing_art_cnt = conn.execute(
+                    "SELECT COUNT(*) AS cnt FROM article_match WHERE event_id = ?",
+                    (event_data["id"],),
+                ).fetchone()["cnt"]
+                if existing_art_cnt == 0:
+                    country_names = [cm["name"] for cm in country_matches]
+                    event_dates = [o["observed_at"] for o in observations]
+                    curated_candidates = _build_curated_fallback_articles(
+                        event_id=event_data["id"],
+                        event_title=event_data["title"],
+                        event_category=event_data["category"],
+                        country_names=country_names,
+                        event_dates=event_dates,
+                    )
+                    scored_articles = score_and_rank_articles(
+                        articles=curated_candidates,
+                        event_title=event_data["title"],
+                        event_category=event_data["category"],
+                        country_names=country_names,
+                        event_dates=event_dates,
+                        min_score=25,
+                    )
+                    self._upsert_scored_articles_in_tx(conn, event_data["id"], scored_articles, now_iso)
 
     def _upsert_scored_articles_in_tx(
         self,
@@ -449,7 +472,8 @@ class Database:
             observations = ev.get("observations") or []
             if not observations:
                 continue
-            latest_obs = observations[-1]
+            latest_obs = max(observations, key=lambda o: o["observed_at"])
+            earliest_obs = min(observations, key=lambda o: o["observed_at"])
             geoms = [o["geom"] for o in observations]
             bbox = extract_geometry_bbox(geoms) or (0.0, 0.0, 0.0, 0.0)
             event_rows.append(
@@ -460,7 +484,7 @@ class Database:
                     ev["status"],
                     ev.get("closed_at"),
                     json.dumps(ev.get("sources") or []),
-                    now_iso,
+                    earliest_obs["observed_at"],
                     now_iso,
                     latest_obs["observed_at"],
                     json.dumps(latest_obs["geom"]),
@@ -540,7 +564,7 @@ class Database:
             self.upsert_event_with_observations(ev, resolve_spatial_and_news=True)
         self.last_sync_at = datetime.now(timezone.utc).isoformat()
         self.log_sync_run("eonet", started, "success", len(seed_events))
-        self.log_sync_run("rest_countries", started, "success", len(load_admin0_boundaries()))
+        self.log_sync_run("rest_countries", started, "success", len(get_fallback_country_profiles()))
         self.log_sync_run("newsapi", started, "success", len(seed_events) * 3)
 
     async def run_live_sync(self, force_offline: bool = False) -> dict:
@@ -593,25 +617,75 @@ class Database:
                     )
         self.log_sync_run("rest_countries", rc_started, "success", len(profiles))
 
-        # Enrich top open events with NewsAPI / RSS if online
+        # Enrich up to 5 events needing discovery or closure news enrichment (FR-10, NFR-09)
         news_started = datetime.now(timezone.utc).isoformat()
         news_count = 0
+        news_outcome = "success"
+        news_error_class: str | None = None
         now_iso = datetime.now(timezone.utc).isoformat()
-        for ev in events[:5]:
+        with self._lock, self._connect() as conn:
+            target_rows = conn.execute(
+                """
+                SELECT id, status FROM event
+                WHERE (status = 'open' AND news_enriched_on_open = 0)
+                   OR (status = 'closed' AND news_enriched_on_close = 0)
+                ORDER BY latest_observed_at DESC
+                LIMIT 5
+                """
+            ).fetchall()
+            target_ids = [r["id"] for r in target_rows]
+            ev_by_id = {ev["id"]: ev for ev in events}
+            target_events = [ev_by_id[eid] for eid in target_ids if eid in ev_by_id]
+            if not target_events:
+                target_events = events[:5]
+
+            countries_map: dict[str, list[str]] = {}
+            if target_events:
+                t_ids = [ev["id"] for ev in target_events]
+                ph = ",".join("?" for _ in t_ids)
+                for cr in conn.execute(
+                    f"""
+                    SELECT ec.event_id, cp.name
+                    FROM event_country ec
+                    JOIN country_profile cp ON ec.iso_a3 = cp.iso_a3
+                    WHERE ec.event_id IN ({ph}) AND ec.iso_a3 <> '-99'
+                    ORDER BY ec.match_method ASC, cp.name ASC
+                    """,
+                    t_ids,
+                ).fetchall():
+                    countries_map.setdefault(cr["event_id"], []).append(cr["name"])
+
+        for ev in target_events:
             res = await fetch_event_news(
                 event_id=ev["id"],
                 event_title=ev["title"],
                 event_category=ev["category"],
-                country_names=[],
+                country_names=countries_map.get(ev["id"], []),
                 event_dates=[o["observed_at"] for o in ev["observations"]],
                 quota_tracker=self.quota_tracker,
                 force_offline=force_offline,
             )
+            if res["outcome"] == "rate_limited":
+                news_outcome = "rate_limited"
+                news_error_class = res.get("error_class") or "QuotaExhausted"
+            elif res.get("error_class") and news_outcome == "success":
+                news_outcome = "partial"
+                news_error_class = res.get("error_class")
             if res["articles"]:
                 with self._lock, self._connect() as conn:
                     self._upsert_scored_articles_in_tx(conn, ev["id"], res["articles"], now_iso)
+                    if ev["status"] == "closed":
+                        conn.execute(
+                            "UPDATE event SET news_enriched_on_close = 1, news_enriched_on_open = 1 WHERE id = ?",
+                            (ev["id"],),
+                        )
+                    else:
+                        conn.execute(
+                            "UPDATE event SET news_enriched_on_open = 1 WHERE id = ?",
+                            (ev["id"],),
+                        )
             news_count += len(res["articles"])
-        self.log_sync_run("newsapi", news_started, "success", news_count)
+        self.log_sync_run("newsapi", news_started, news_outcome, news_count, news_error_class)
         self.last_sync_at = datetime.now(timezone.utc).isoformat()
         self.cached_fallback_active = eonet_res.get("error_class") is not None
         return {
@@ -653,14 +727,20 @@ class Database:
             params.append(status.strip())
 
         if q and q.strip():
-            q_like = f"%{q.strip()}%"
+            q_escaped = (
+                q.strip()
+                .replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_")
+            )
+            q_like = f"%{q_escaped}%"
             clauses.append(
-                "(e.title LIKE ? OR e.category LIKE ? OR EXISTS ("
+                "(e.id LIKE ? ESCAPE '\\' OR e.title LIKE ? ESCAPE '\\' OR e.category LIKE ? ESCAPE '\\' OR EXISTS ("
                 "SELECT 1 FROM event_country ec JOIN country_profile cp ON ec.iso_a3 = cp.iso_a3 "
-                "WHERE ec.event_id = e.id AND (cp.name LIKE ? OR cp.iso_a3 LIKE ?)"
+                "WHERE ec.event_id = e.id AND (cp.name LIKE ? ESCAPE '\\' OR cp.iso_a3 LIKE ? ESCAPE '\\' OR cp.iso_a2 LIKE ? ESCAPE '\\')"
                 "))"
             )
-            params.extend([q_like, q_like, q_like, q_like])
+            params.extend([q_like, q_like, q_like, q_like, q_like, q_like])
 
         if start_date and start_date.strip():
             clauses.append("e.latest_observed_at >= ?")
@@ -706,58 +786,60 @@ class Database:
             countries_by_event: dict[str, list[dict]] = {}
             obs_by_event: dict[str, list[dict]] = {}
 
-            if event_ids and len(event_ids) <= 250:
-                placeholders = ",".join("?" for _ in event_ids)
-                c_rows = conn.execute(
-                    f"""
-                    SELECT
-                        ec.event_id, ec.iso_a3, ec.match_method,
-                        cp.iso_a2, cp.name, cp.population, cp.area_sq_km,
-                        cp.population_density, cp.currencies_json, cp.retrieved_at
-                    FROM event_country ec
-                    JOIN country_profile cp ON ec.iso_a3 = cp.iso_a3
-                    WHERE ec.event_id IN ({placeholders}) AND ec.iso_a3 <> '-99'
-                    ORDER BY ec.match_method ASC, cp.name ASC
-                    """,
-                    event_ids,
-                ).fetchall()
-                for cr in c_rows:
-                    density = cr["population_density"]
-                    countries_by_event.setdefault(cr["event_id"], []).append(
-                        {
-                            "iso_a3": cr["iso_a3"],
-                            "iso_a2": cr["iso_a2"],
-                            "name": cr["name"],
-                            "match_method": cr["match_method"],
-                            "population": cr["population"],
-                            "area_sq_km": cr["area_sq_km"],
-                            "population_density": density,
-                            "density_label": format_density_label(density),
-                            "currencies": json.loads(cr["currencies_json"] or "{}"),
-                            "retrieved_at": cr["retrieved_at"],
-                        }
-                    )
+            if event_ids:
+                for chunk_start in range(0, len(event_ids), 250):
+                    chunk = event_ids[chunk_start : chunk_start + 250]
+                    placeholders = ",".join("?" for _ in chunk)
+                    c_rows = conn.execute(
+                        f"""
+                        SELECT
+                            ec.event_id, ec.iso_a3, ec.match_method,
+                            cp.iso_a2, cp.name, cp.population, cp.area_sq_km,
+                            cp.population_density, cp.currencies_json, cp.retrieved_at
+                        FROM event_country ec
+                        JOIN country_profile cp ON ec.iso_a3 = cp.iso_a3
+                        WHERE ec.event_id IN ({placeholders}) AND ec.iso_a3 <> '-99'
+                        ORDER BY ec.match_method ASC, cp.name ASC
+                        """,
+                        chunk,
+                    ).fetchall()
+                    for cr in c_rows:
+                        density = cr["population_density"]
+                        countries_by_event.setdefault(cr["event_id"], []).append(
+                            {
+                                "iso_a3": cr["iso_a3"],
+                                "iso_a2": cr["iso_a2"],
+                                "name": cr["name"],
+                                "match_method": cr["match_method"],
+                                "population": cr["population"],
+                                "area_sq_km": cr["area_sq_km"],
+                                "population_density": density,
+                                "density_label": format_density_label(density),
+                                "currencies": json.loads(cr["currencies_json"] or "{}"),
+                                "retrieved_at": cr["retrieved_at"],
+                            }
+                        )
 
-                o_rows = conn.execute(
-                    f"""
-                    SELECT event_id, observed_at, geom_json, magnitude_value, magnitude_unit
-                    FROM observation
-                    WHERE event_id IN ({placeholders})
-                    ORDER BY observed_at ASC
-                    """,
-                    event_ids,
-                ).fetchall()
-                for orow in o_rows:
-                    geom = json.loads(orow["geom_json"])
-                    obs_by_event.setdefault(orow["event_id"], []).append(
-                        {
-                            "observed_at": orow["observed_at"],
-                            "geom": geom,
-                            "geometry": geom,
-                            "magnitude_value": orow["magnitude_value"],
-                            "magnitude_unit": orow["magnitude_unit"],
-                        }
-                    )
+                    o_rows = conn.execute(
+                        f"""
+                        SELECT event_id, observed_at, geom_json, magnitude_value, magnitude_unit
+                        FROM observation
+                        WHERE event_id IN ({placeholders})
+                        ORDER BY observed_at ASC
+                        """,
+                        chunk,
+                    ).fetchall()
+                    for orow in o_rows:
+                        geom = json.loads(orow["geom_json"])
+                        obs_by_event.setdefault(orow["event_id"], []).append(
+                            {
+                                "observed_at": orow["observed_at"],
+                                "geom": geom,
+                                "geometry": geom,
+                                "magnitude_value": orow["magnitude_value"],
+                                "magnitude_unit": orow["magnitude_unit"],
+                            }
+                        )
 
             items = []
             for r in rows:
@@ -802,7 +884,9 @@ class Database:
             "cursor": str(cursor) if cursor else None,
             "next_cursor": next_cursor,
             "last_updated": self.last_sync_at,
+            "last_updated_at": self.last_sync_at,
             "cached_fallback": self.cached_fallback_active,
+            "cache_freshness": "cached_fallback" if self.cached_fallback_active else "fresh",
         }
 
     def get_event_by_id(self, event_id: str) -> dict | None:
@@ -1001,14 +1085,39 @@ class Database:
                 SELECT provider, started_at, ended_at, outcome, records_processed, error_class
                 FROM sync_run
                 ORDER BY id DESC
-                LIMIT 10
+                LIMIT 15
                 """
             ).fetchall()
 
+        providers: dict[str, dict] = {}
+        for r in sync_rows:
+            prov = r["provider"]
+            if prov not in providers:
+                providers[prov] = {
+                    "outcome": r["outcome"],
+                    "last_sync_at": r["ended_at"] or r["started_at"],
+                    "records_processed": int(r["records_processed"]),
+                    "error_class": r["error_class"],
+                }
+        for prov in ("eonet", "rest_countries", "newsapi"):
+            providers.setdefault(
+                prov,
+                {
+                    "outcome": "unknown",
+                    "last_sync_at": None,
+                    "records_processed": 0,
+                    "error_class": None,
+                },
+            )
+
+        is_degraded = ev_cnt == 0 or self.cached_fallback_active
         return {
-            "status": "ok" if ev_cnt > 0 else "degraded",
+            "status": "degraded" if is_degraded else "ok",
             "last_updated": self.last_sync_at,
+            "last_updated_at": self.last_sync_at,
             "cached_fallback": self.cached_fallback_active,
+            "cache_freshness": "cached_fallback" if self.cached_fallback_active else "fresh",
+            "providers": providers,
             "database": {
                 "engine": "sqlite_wal",
                 "connected": True,
@@ -1017,5 +1126,5 @@ class Database:
                 "articles_count": int(art_cnt),
             },
             "newsapi_budget": self.quota_tracker.snapshot(),
-            "sync_runs": [dict(r) for r in sync_rows],
+            "sync_runs": [dict(r) for r in sync_rows[:10]],
         }
