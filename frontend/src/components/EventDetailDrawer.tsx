@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { HazardEvent, ScoredArticle } from '../types/domain';
 import {
   formatUtcTimestamp,
@@ -29,6 +29,7 @@ export const EventDetailDrawer: React.FC<EventDetailDrawerProps> = React.memo(({
   disableEscapeClose = false,
 }) => {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const [showAllObservations, setShowAllObservations] = useState<boolean>(false);
 
   useEffect(() => {
     if (!event || disableEscapeClose) return;
@@ -43,6 +44,7 @@ export const EventDetailDrawer: React.FC<EventDetailDrawerProps> = React.memo(({
   }, [event, onClose, disableEscapeClose]);
 
   useEffect(() => {
+    setShowAllObservations(false);
     if (scrollContainerRef.current) {
       scrollContainerRef.current.scrollTop = 0;
     }
@@ -54,6 +56,10 @@ export const EventDetailDrawer: React.FC<EventDetailDrawerProps> = React.memo(({
   const Icon = meta.Icon;
   const latestObs = getLatestObservation(event.observations);
   const earliestObs = getEarliestObservation(event.observations);
+  const visibleObservations = showAllObservations
+    ? event.observations
+    : event.observations.slice(0, 3);
+  const hiddenObsCount = event.observations.length - visibleObservations.length;
 
   const magnitudeDisplay =
     latestObs && latestObs.magnitude_value !== null && latestObs.magnitude_value !== undefined
@@ -116,46 +122,25 @@ export const EventDetailDrawer: React.FC<EventDetailDrawerProps> = React.memo(({
           {event.title}
         </h2>
 
-        {/* SECTION 1: NASA EONET v3 Telemetry & Observation History */}
+        {/* SECTION 1: Satellite Telemetry & Observation History */}
         <section className="drawer-section" aria-labelledby="drawer-telemetry-heading">
           <div className="drawer-section-header">
             <h3 id="drawer-telemetry-heading" className="drawer-section-title">
-              Satellite Telemetry &amp; Observation History
+              Telemetry
             </h3>
             <span className="section-source-tag mono-text">NASA EONET v3</span>
           </div>
 
-          {/* Mandatory Satellite Geometry Approximation Disclaimer Badge */}
-          <div
-            className="disclaimer-badge disclaimer-geometry"
-            role="note"
-            data-testid="disclaimer-satellite-geometry"
-          >
-            <strong>Satellite Geometry Caveat:</strong> Event coordinates and perimeters from NASA
-            EONET v3 are approximate satellite/agency observations and may reflect upstream
-            reporting delays. Do not use for local emergency navigation.
-          </div>
-
           <dl className="telemetry-summary-grid">
             <div className="telemetry-cell">
-              <dt className="metric-label">Event Identifier</dt>
-              <dd className="metric-value mono-text">{event.id}</dd>
-            </div>
-            <div className="telemetry-cell">
-              <dt className="metric-label">Latest Magnitude</dt>
+              <dt className="metric-label">Magnitude</dt>
               <dd className="metric-value mono-text" data-testid="drawer-magnitude-value">
                 {magnitudeDisplay}
               </dd>
             </div>
             <div className="telemetry-cell">
-              <dt className="metric-label">First Observed</dt>
-              <dd className="metric-value mono-text">
-                {formatUtcTimestamp(earliestObs?.observed_at || event.first_seen_at)}
-              </dd>
-            </div>
-            <div className="telemetry-cell">
               <dt className="metric-label">
-                {event.status === 'closed' ? 'Closed Timestamp' : 'Latest Observation'}
+                {event.status === 'closed' ? 'Closed' : 'Latest Update'}
               </dt>
               <dd className="metric-value mono-text">
                 {formatUtcTimestamp(
@@ -165,25 +150,35 @@ export const EventDetailDrawer: React.FC<EventDetailDrawerProps> = React.memo(({
                 )}
               </dd>
             </div>
+            <div className="telemetry-cell">
+              <dt className="metric-label">First Observed</dt>
+              <dd className="metric-value mono-text">
+                {formatUtcTimestamp(earliestObs?.observed_at || event.first_seen_at)}
+              </dd>
+            </div>
+            <div className="telemetry-cell">
+              <dt className="metric-label">Observations</dt>
+              <dd className="metric-value mono-text">{event.observations.length}</dd>
+            </div>
           </dl>
 
-          {/* Coordinate Observation Timeline (Point, LineString, Polygon in WGS 84 [lon, lat]) */}
+          {/* Compact Coordinate Observation Timeline */}
           <div className="observations-timeline-box">
-            <h4 className="sub-heading">
-              WGS 84 Coordinate Timeline ({event.observations.length}{' '}
-              {event.observations.length === 1 ? 'Observation' : 'Observations'})
-            </h4>
+            <h4 className="sub-heading">Coordinates (WGS 84)</h4>
             <ul className="observation-list" data-testid="observation-timeline">
-              {event.observations.map((obs, idx) => {
+              {visibleObservations.map((obs, idx) => {
                 const rep = getRepresentativeCoord(obs.geom);
                 const mag =
                   obs.magnitude_value !== null && obs.magnitude_value !== undefined
                     ? `${obs.magnitude_value.toLocaleString('en-US')} ${obs.magnitude_unit || ''}`.trim()
-                    : 'Magnitude not reported';
+                    : null;
                 return (
                   <li key={`${obs.id}-${obs.observed_at}-${idx}`} className="observation-item">
                     <div className="observation-item-top">
-                      <span className="geom-type-badge mono-text">{obs.geom.type}</span>
+                      <span className="geom-type-badge mono-text">
+                        {obs.geom.type}
+                        {mag ? ` · ${mag}` : ''}
+                      </span>
                       <time className="observation-time mono-text" dateTime={obs.observed_at}>
                         {formatUtcTimestamp(obs.observed_at)}
                       </time>
@@ -191,25 +186,40 @@ export const EventDetailDrawer: React.FC<EventDetailDrawerProps> = React.memo(({
                     <div className="observation-coords mono-text">
                       {rep ? formatWgs84(rep) : 'Coordinates N/A'}
                       {obs.geom.type === 'LineString' && (
-                        <span> · {obs.geom.coordinates.length} track waypoints</span>
+                        <span> · {obs.geom.coordinates.length} pts</span>
                       )}
                       {obs.geom.type === 'Polygon' && (
-                        <span> · {obs.geom.coordinates[0]?.length || 0} perimeter vertices</span>
+                        <span> · {obs.geom.coordinates[0]?.length || 0} vertices</span>
                       )}
                     </div>
-                    <div className="observation-mag mono-text">{mag}</div>
                   </li>
                 );
               })}
             </ul>
+            {hiddenObsCount > 0 && (
+              <button
+                type="button"
+                className="timeline-expand-btn"
+                onClick={() => setShowAllObservations(true)}
+              >
+                Show {hiddenObsCount} earlier {hiddenObsCount === 1 ? 'observation' : 'observations'}
+              </button>
+            )}
+            {showAllObservations && event.observations.length > 3 && (
+              <button
+                type="button"
+                className="timeline-expand-btn"
+                onClick={() => setShowAllObservations(false)}
+              >
+                Show fewer
+              </button>
+            )}
           </div>
 
           {/* Official NASA / Agency Source Links */}
-          <div className="sources-box">
-            <h4 className="sub-heading">Official NASA &amp; Agency Provenance Links</h4>
-            {event.sources.length === 0 ? (
-              <p className="muted-note">No external agency URLs attached to this EONET record.</p>
-            ) : (
+          {event.sources.length > 0 && (
+            <div className="sources-box">
+              <h4 className="sub-heading">Sources</h4>
               <div className="source-links-row">
                 {event.sources.map((src) => {
                   const href = safeExternalUrl(src.url);
@@ -230,41 +240,32 @@ export const EventDetailDrawer: React.FC<EventDetailDrawerProps> = React.memo(({
                   );
                 })}
               </div>
-            )}
-          </div>
+            </div>
+          )}
+
+          {/* Concise Satellite Geometry Footnote */}
+          <p
+            className="inline-caveat-note"
+            role="note"
+            data-testid="disclaimer-satellite-geometry"
+          >
+            Coordinates are approximate satellite/agency observations; not for emergency navigation.
+          </p>
         </section>
 
         {/* SECTION 2: Matched Country Profile Cards */}
         <section className="drawer-section" aria-labelledby="drawer-country-heading">
           <div className="drawer-section-header">
             <h3 id="drawer-country-heading" className="drawer-section-title">
-              Matched Country Profiles &amp; Macro Demographics
+              Country Context
             </h3>
             <span className="section-source-tag mono-text">REST Countries v3.1</span>
           </div>
 
-          {/* Mandatory National Population Density Disclaimer Badge */}
-          <div
-            className="disclaimer-badge disclaimer-density"
-            role="note"
-            data-testid="disclaimer-national-density"
-          >
-            <strong>National Population Density Caveat:</strong> Population density is a national
-            macro-level average calculated from REST Countries v3.1 (National Population ÷ Total
-            Land Area in km²) and does not measure local population exposure inside the hazard
-            footprint.
-          </div>
-
           {event.countries.length === 0 ? (
             <div className="open-ocean-card" data-testid="no-country-matches-card">
-              <div className="open-ocean-title">
-                No Sovereign Country Profile Matched (Open Ocean / Offshore Event)
-              </div>
-              <p>
-                This hazard geometry lies outside sovereign administrative boundaries (Natural Earth
-                Admin 0 1:10m) and beyond the 100 km coastal proximity buffer. Full NASA EONET v3
-                satellite telemetry remains available above.
-              </p>
+              <div className="open-ocean-title">No Sovereign Country Profile Matched</div>
+              <p>Open-ocean event outside the 100 km coastal buffer.</p>
             </div>
           ) : (
             <div className="countries-stack" data-testid="matched-countries-list">
@@ -273,6 +274,16 @@ export const EventDetailDrawer: React.FC<EventDetailDrawerProps> = React.memo(({
               ))}
             </div>
           )}
+
+          {/* Concise National Population Density Footnote */}
+          <p
+            className="inline-caveat-note"
+            role="note"
+            data-testid="disclaimer-national-density"
+          >
+            Density is a national macro-level average calculated from REST Countries v3.1, not local
+            hazard exposure.
+          </p>
         </section>
 
         {/* SECTION 3: Ranked News Coverage & Rule-Based Evidence */}

@@ -174,6 +174,10 @@ input {
 }
 
 .brand-title {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.45rem;
   font-family: var(--font-display);
   font-size: 0.98rem;
   font-weight: 700;
@@ -182,23 +186,10 @@ input {
   text-wrap: balance;
 }
 
-.brand-divider {
-  color: var(--accent-cyan);
-  margin: 0 0.22rem;
-}
-
 .brand-subtitle {
+  font-size: 0.78rem;
   font-weight: 500;
-  color: var(--text-secondary);
-}
-
-.brand-tagline {
-  font-size: 0.72rem;
   color: var(--text-muted);
-  margin-top: 0.08rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .header-controls {
@@ -283,12 +274,18 @@ input {
   cursor: progress;
 }
 
+.header-icon-btn {
+  padding: 0.38rem 0.48rem;
+}
+
 .header-btn:focus-visible,
 .category-pill:focus-visible,
 .status-toggle-btn:focus-visible,
 .bbox-toggle-btn:focus-visible,
 .reset-filters-btn:focus-visible,
 .empty-reset-btn:focus-visible,
+.timeline-expand-btn:focus-visible,
+.footer-caveat-link:focus-visible,
 .search-clear-btn:focus-visible,
 .date-input:focus-visible,
 .event-card:focus-visible,
@@ -808,12 +805,12 @@ input {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 0.45rem;
-  padding: 0.76rem 0.86rem;
+  gap: 0.42rem;
+  padding: 0.72rem 0.85rem;
   content-visibility: auto;
-  contain-intrinsic-size: 0 118px;
+  contain-intrinsic-size: 0 92px;
   border-radius: 10px;
-  background: rgba(16, 26, 46, 0.76);
+  background: rgba(16, 26, 46, 0.62);
   border: 1px solid var(--border-subtle);
   cursor: pointer;
   transition: border-color 140ms ease, background-color 140ms ease;
@@ -835,6 +832,38 @@ input {
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
+}
+
+.category-label-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.34rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.status-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.34rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.status-indicator-open {
+  color: #6ee7b7;
+}
+
+.status-indicator-closed {
+  color: var(--text-muted);
+}
+
+.card-location-text {
+  font-size: 0.73rem;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .category-badge {
@@ -990,26 +1019,26 @@ input {
 
 .globe-hud-top-left {
   position: absolute;
-  top: 0.8rem;
-  left: 0.8rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
+  top: 0.75rem;
+  left: 0.75rem;
   pointer-events: none;
 }
 
-.globe-engine-pill,
-.globe-coords-pill {
+.globe-hud-pill {
   display: inline-flex;
   align-items: center;
   gap: 0.42rem;
-  padding: 0.28rem 0.64rem;
-  border-radius: 8px;
+  padding: 0.28rem 0.62rem;
+  border-radius: 999px;
   background: var(--glass-panel);
   backdrop-filter: blur(12px);
   border: 1px solid var(--border-subtle);
-  font-size: 0.73rem;
+  font-size: 0.72rem;
   color: var(--text-secondary);
+}
+
+.hud-sep {
+  color: var(--text-muted);
 }
 
 .engine-dot {
@@ -1260,30 +1289,29 @@ input {
   flex-shrink: 0;
 }
 
-.disclaimer-badge {
-  padding: 0.58rem 0.75rem;
-  border-radius: 8px;
-  font-size: 0.74rem;
-  line-height: 1.48;
-  border: 1px solid;
+.inline-caveat-note {
+  font-size: 0.7rem;
+  line-height: 1.45;
+  color: var(--text-muted);
 }
 
-.disclaimer-geometry {
-  background: rgba(249, 115, 22, 0.1);
-  border-color: rgba(249, 115, 22, 0.34);
-  color: #fed7aa;
+.timeline-expand-btn {
+  margin-top: 0.45rem;
+  padding: 0.24rem 0.55rem;
+  border-radius: 6px;
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  color: var(--accent-cyan);
+  font-family: var(--font-body);
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 140ms ease, border-color 140ms ease;
 }
 
-.disclaimer-density {
-  background: rgba(56, 189, 248, 0.1);
-  border-color: rgba(56, 189, 248, 0.34);
-  color: #bae6fd;
-}
-
-.disclaimer-news {
-  background: rgba(168, 85, 247, 0.1);
-  border-color: rgba(168, 85, 247, 0.34);
-  color: #e9d5ff;
+.timeline-expand-btn:hover {
+  background: rgba(56, 189, 248, 0.12);
+  border-color: var(--border-highlight);
 }
 
 .telemetry-summary-grid,
@@ -1609,8 +1637,12 @@ input {
 
 .article-description {
   font-size: 0.76rem;
-  line-height: 1.5;
+  line-height: 1.48;
   color: var(--text-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .match-reasons-block {
@@ -1726,36 +1758,67 @@ input {
   margin-bottom: 0.25rem;
 }
 
-/* 8. Persistent Use-Boundary & Uncertainty Footer */
+/* 8. Compact Use-Boundary & Uncertainty Footer */
 .uncertainty-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 0.45rem 0.85rem;
-  padding: 0.38rem 1.15rem;
-  padding-bottom: max(0.38rem, env(safe-area-inset-bottom));
+  gap: 0.35rem 0.75rem;
+  padding: 0.3rem 1.15rem;
+  padding-bottom: max(0.3rem, env(safe-area-inset-bottom));
   background: rgba(5, 9, 18, 0.96);
   border-top: 1px solid var(--border-subtle);
-  font-size: 0.69rem;
-  line-height: 1.38;
+  font-size: 0.7rem;
   color: var(--text-muted);
   z-index: 30;
   flex-shrink: 0;
 }
 
 .footer-boundary-pill {
-  color: #fda4af;
+  color: var(--text-muted);
 }
 
 .footer-caveats-row {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.38rem;
+  gap: 0.35rem;
 }
 
-/* Responsive Layout for Tablet & Mobile Viewports */
+.footer-caveat-link {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-body);
+  font-size: 0.7rem;
+  cursor: pointer;
+  padding: 0.08rem 0.15rem;
+  border-radius: 4px;
+  transition: color 140ms ease;
+}
+
+.footer-caveat-link:hover {
+  color: var(--accent-cyan);
+  text-decoration: underline;
+}
+
+/* Responsive Layout for Medium Desktop, Tablet & Mobile Viewports */
+@media (max-width: 1279px) {
+  .event-sidebar {
+    width: 340px;
+    min-width: 280px;
+  }
+
+  .event-detail-drawer {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(460px, 100%);
+  }
+}
+
 @media (max-width: 960px) {
   html,
   body,
@@ -1772,10 +1835,6 @@ input {
   .top-header {
     flex-direction: column;
     align-items: flex-start;
-  }
-
-  .brand-tagline {
-    white-space: normal;
   }
 
   .workspace-main {

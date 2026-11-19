@@ -509,7 +509,7 @@ const STARFIELD = Array.from({ length: 64 }, (_, i) => {
 function formatTelemetryString(lon: number, lat: number, zoom: number): string {
   const latStr = lat >= 0 ? `${lat.toFixed(1)}°N` : `${Math.abs(lat).toFixed(1)}°S`;
   const lonStr = lon >= 0 ? `${lon.toFixed(1)}°E` : `${Math.abs(lon).toFixed(1)}°W`;
-  return `CAM ${latStr}, ${lonStr} · ${zoom.toFixed(2)}x`;
+  return `${latStr}, ${lonStr} · ${zoom.toFixed(1)}x`;
 }
 
 export const GlobeCanvas: React.FC<GlobeCanvasProps> = React.memo(({
@@ -613,9 +613,7 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = React.memo(({
       }`;
     }
     if (engineTextRef.current) {
-      engineTextRef.current.textContent = active
-        ? 'On-Demand 3D (Rendering Frame)'
-        : 'On-Demand 3D (Idle — ~0% GPU)';
+      engineTextRef.current.textContent = active ? '3D' : '3D Idle';
     }
   }, []);
 
@@ -1184,8 +1182,8 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = React.memo(({
       const rect = container.getBoundingClientRect();
       const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
       sizeRef.current = {
-        width: Math.max(320, Math.round(rect.width || 880)),
-        height: Math.max(260, Math.round(rect.height || 620)),
+        width: Math.max(1, Math.round(rect.width || 880)),
+        height: Math.max(1, Math.round(rect.height || 620)),
         dpr,
       };
       drawFrame();
@@ -1499,14 +1497,17 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = React.memo(({
         onKeyDown={handleCanvasKeyDown}
       />
 
-      {/* Top-Left Telemetry & Render Engine Pill (Updated via DOM refs for 0 React re-renders during drag) */}
+      {/* Compact Top-Left Telemetry Pill (DOM refs = 0 React re-renders during drag) */}
       <div className="globe-hud-top-left">
-        <div className="globe-engine-pill" data-testid="render-mode-indicator">
+        <div className="globe-hud-pill" data-testid="render-mode-indicator">
           <span ref={engineDotRef} className="engine-dot engine-dot-idle" aria-hidden="true" />
-          <span ref={engineTextRef}>On-Demand 3D (Idle — ~0% GPU)</span>
-        </div>
-        <div ref={telemetryPillRef} className="globe-coords-pill mono-text">
-          CAM 18.0°N, 25.0°E · 1.08x
+          <span ref={engineTextRef}>3D Idle</span>
+          <span className="hud-sep" aria-hidden="true">
+            ·
+          </span>
+          <span ref={telemetryPillRef} className="mono-text">
+            18.0°N, 25.0°E · 1.1x
+          </span>
         </div>
       </div>
 
@@ -1517,6 +1518,12 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = React.memo(({
           .map((cat) => {
             const Icon = cat.Icon;
             const isActive = activeCategory === cat.id;
+            const legendLabel =
+              cat.id === 'severeStorms'
+                ? 'Storms'
+                : cat.id === 'seaLakeIce'
+                  ? 'Sea Ice'
+                  : cat.label;
             return onSelectCategory ? (
               <button
                 key={cat.id}
@@ -1529,14 +1536,14 @@ export const GlobeCanvas: React.FC<GlobeCanvasProps> = React.memo(({
                 <span className="legend-swatch" style={{ backgroundColor: cat.color }}>
                   <Icon size={11} />
                 </span>
-                <span className="legend-label">{cat.label}</span>
+                <span className="legend-label">{legendLabel}</span>
               </button>
             ) : (
               <div key={cat.id} className="legend-item">
                 <span className="legend-swatch" style={{ backgroundColor: cat.color }}>
                   <Icon size={11} />
                 </span>
-                <span className="legend-label">{cat.label}</span>
+                <span className="legend-label">{legendLabel}</span>
               </div>
             );
           })}

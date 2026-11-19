@@ -47,7 +47,7 @@ export const CountryCard: React.FC<CountryCardProps> = React.memo(({ country }) 
 
       <dl className="country-metrics-grid">
         <div className="metric-box">
-          <dt className="metric-label">National Population</dt>
+          <dt className="metric-label">Population</dt>
           <dd className="metric-value mono-text">
             {country.population !== null && country.population !== undefined
               ? country.population.toLocaleString('en-US')
@@ -56,7 +56,7 @@ export const CountryCard: React.FC<CountryCardProps> = React.memo(({ country }) 
         </div>
 
         <div className="metric-box">
-          <dt className="metric-label">Total Land Area</dt>
+          <dt className="metric-label">Land Area</dt>
           <dd className="metric-value mono-text">
             {country.area_sq_km !== null && country.area_sq_km !== undefined
               ? `${country.area_sq_km.toLocaleString('en-US')} km²`
@@ -65,7 +65,7 @@ export const CountryCard: React.FC<CountryCardProps> = React.memo(({ country }) 
         </div>
 
         <div className="metric-box metric-box-wide">
-          <dt className="metric-label">Derived Population Density (Macro-Level)</dt>
+          <dt className="metric-label">Population Density</dt>
           <dd
             className="metric-value metric-density-highlight mono-text"
             data-testid={`country-density-${country.iso_a3}`}
@@ -77,14 +77,14 @@ export const CountryCard: React.FC<CountryCardProps> = React.memo(({ country }) 
         </div>
 
         <div className="metric-box metric-box-wide">
-          <dt className="metric-label">Official Currency</dt>
+          <dt className="metric-label">Currency</dt>
           <dd className="metric-value">{currencyLabel}</dd>
         </div>
       </dl>
 
       <div className="country-card-footer mono-text">
-        <span>Provider: REST Countries v3.1 + Natural Earth 1:10m</span>
-        <span>Retrieved: {formatUtcTimestamp(country.retrieved_at)}</span>
+        <span>REST Countries v3.1</span>
+        <span>{formatUtcTimestamp(country.retrieved_at)}</span>
       </div>
     </div>
   );

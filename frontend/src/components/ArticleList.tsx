@@ -12,27 +12,14 @@ export const ArticleList: React.FC<ArticleListProps> = React.memo(({ articles, i
     <section className="drawer-section" aria-labelledby="drawer-news-heading">
       <div className="drawer-section-header">
         <h3 id="drawer-news-heading" className="drawer-section-title">
-          Ranked News Coverage &amp; Match Evidence
+          Related News
         </h3>
-        <span className="section-source-tag mono-text">Rule Scorer v1</span>
-      </div>
-
-      {/* Mandatory Contextual News Matching Disclaimer Badge */}
-      <div
-        className="disclaimer-badge disclaimer-news"
-        role="note"
-        data-testid="disclaimer-contextual-news"
-      >
-        <strong>Contextual News Matching Caveat:</strong> News articles from NewsAPI v2 are matched
-        contextually by hazard keywords, country/place names, and publication dates—not by verified
-        GPS coordinates inside the disaster area.
+        <span className="section-source-tag mono-text">Scorer v1</span>
       </div>
 
       {isLoading ? (
         <div className="articles-skeleton-stack" role="status" aria-label="Loading matched news">
-          <span className="sr-only">
-            Evaluating candidate NewsAPI v2 coverage with rule-based scorer…
-          </span>
+          <span className="sr-only">Loading matched news coverage…</span>
           {[0, 1].map((i) => (
             <div key={i} className="skeleton-card" aria-hidden="true">
               <div className="skeleton-line skeleton-short" />
@@ -43,10 +30,7 @@ export const ArticleList: React.FC<ArticleListProps> = React.memo(({ articles, i
         </div>
       ) : articles.length === 0 ? (
         <div className="articles-empty-card" data-testid="no-articles-state">
-          <p>
-            No candidate news articles met the minimum explainable match threshold (score &ge; 25)
-            within the current archive window.
-          </p>
+          <p>No matched news articles found for this event.</p>
         </div>
       ) : (
         <div className="articles-list" data-testid="articles-list">
@@ -84,15 +68,14 @@ export const ArticleList: React.FC<ArticleListProps> = React.memo(({ articles, i
                       className={`confidence-badge ${confidenceClass}`}
                       data-testid="article-confidence-badge"
                     >
-                      {article.confidence_label} Match
+                      {article.confidence_label}
                     </span>
                     <span className="score-pill mono-text" data-testid="article-score-value">
-                      {article.score}/100 ({article.algorithm_version})
+                      {article.score}/100
                     </span>
                   </div>
                 </div>
 
-                {/* Score Progress Bar */}
                 <div className="score-bar-track" aria-hidden="true">
                   <div
                     className={`score-bar-fill ${confidenceClass}`}
@@ -123,26 +106,32 @@ export const ArticleList: React.FC<ArticleListProps> = React.memo(({ articles, i
                   <p className="article-description">{article.description}</p>
                 )}
 
-                {/* Human-Readable Match Reasons Chips */}
-                <div className="match-reasons-block">
-                  <span className="match-reasons-label mono-text">Scoring evidence</span>
-                  <div className="match-reasons-chips" data-testid="article-match-reasons">
-                    {article.match_reasons.map((reason, idx) => (
-                      <span
-                        key={`${article.canonical_url}-reason-${idx}`}
-                        className="match-reason-chip"
-                        data-testid="match-reason-chip"
-                      >
-                        ✓ {reason}
-                      </span>
-                    ))}
-                  </div>
+                <div className="match-reasons-chips" data-testid="article-match-reasons">
+                  {article.match_reasons.map((reason, idx) => (
+                    <span
+                      key={`${article.canonical_url}-reason-${idx}`}
+                      className="match-reason-chip"
+                      data-testid="match-reason-chip"
+                    >
+                      {reason}
+                    </span>
+                  ))}
                 </div>
               </article>
             );
           })}
         </div>
       )}
+
+      {/* Concise Contextual News Footnote */}
+      <p
+        className="inline-caveat-note"
+        role="note"
+        data-testid="disclaimer-contextual-news"
+      >
+        Articles are matched contextually by hazard keywords, place names, and dates—not GPS
+        coordinates.
+      </p>
     </section>
   );
 });
