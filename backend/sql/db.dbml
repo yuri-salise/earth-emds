@@ -1,0 +1,127 @@
+Project earth_event_disaster_monitor {
+  database_type: 'PostgreSQL'
+  Note: 'PostgreSQL + PostGIS Initialization Schema for Earth Event & Disaster Monitor (extensions: postgis, pg_trgm)'
+}
+
+Table country_boundary {
+  iso_a3 varchar(3) [pk, note: "CHECK: iso_a3 <> '-99' AND length(trim(iso_a3)) = 3"]
+  iso_a2 varchar(2)
+  name varchar(120) [not null]
+  geom "geometry(MultiPolygon, 4326)" [not null]
+  dataset_version varchar(32) [not null, default: 'ne_10m_admin_0_v5.1.1']
+
+  indexes {
+    geom [name: 'idx_country_boundary_geom', type: gist]
+  }
+}
+
+Table country_profile {
+  iso_a3 varchar(3) [pk]
+  iso_a2 varchar(2)
+  name varchar(120) [not null]
+  population bigint [note: 'CHECK: population IS NULL OR population >= 0']
+  area_sq_km "double precision" [note: 'CHECK: area_sq_km IS NULL OR area_sq_km >= 0']
+  population_density integer
+  currencies jsonb [not null, default: `{}`]
+  retrieved_at timestamptz [not null, default: `NOW()`]
+}
+
+Table event {
+  id varchar(64) [pk, note: 'CHECK: length(trim(id)) > 0']
+  title varchar(300) [not null, note: 'CHECK: length(trim(title)) > 0']
+  category varchar(64) [not null]
+  status varchar(16) [not null, note: "CHECK: status IN ('open', 'closed')"]
+  closed_at timestamptz
+  sources jsonb [not null, default: `[]`]
+  first_seen_at timestamptz [not null, default: `NOW()`]
+  last_updated_at timestamptz [not null, default: `NOW()`]
+  news_enriched_on_open boolean [not null, default: false]
+  news_enriched_on_close boolean [not null, default: false]
+
+  indexes {
+    (category, status) [name: 'idx_event_category_status']
+    last_updated_at [name: 'idx_event_last_updated', note: 'DESC']
+    title [name: 'idx_event_title_trgm', type: gin, note: 'gin_trgm_ops']
+  }
+}
+
+Table observation {
+  id bigserial [pk, increment]
+  event_id varchar(64) [not null]
+  observed_at timestamptz [not null]
+  geom "geometry(Geometry, 4326)" [not null, note: 'CHECK: ST_IsValid(geom)']
+  magnitude_value "double precision"
+  magnitude_unit varchar(32)
+
+  indexes {
+    (event_id, observed_at) [unique, name: 'uq_event_observation']
+    geom [name: 'idx_observation_geom', type: gist]
+    (event_id, observed_at) [name: 'idx_observation_event_time', note: 'observed_at DESC']
+  }
+}
+
+Table event_country {
+  event_id varchar(64) [not null]
+  iso_a3 varchar(3) [not null]
+  match_method varchar(32) [not null, note: "CHECK: match_method IN ('intersects', 'coastal_proximity')"]
+
+  indexes {
+    (event_id, iso_a3) [pk]
+    iso_a3 [name: 'idx_event_country_iso']
+  }
+}
+
+Table article {
+  canonical_url text [pk]
+  original_url text [not null]
+  title text [not null]
+  description text
+  publisher varchar(160) [not null]
+  published_at timestamptz [not null]
+  retrieved_at timestamptz [not null, default: `NOW()`]
+
+  indexes {
+    published_at [name: 'idx_article_published_at', note: 'DESC']
+  }
+}
+
+Table article_match {
+  event_id varchar(64) [not null]
+  article_url text [not null]
+  score integer [not null, note: 'CHECK: score >= 0 AND score <= 100']
+  confidence_label varchar(16) [not null, note: "CHECK: confidence_label IN ('Strong', 'Moderate', 'Weak')"]
+  match_reasons jsonb [not null, default: `[]`]
+  algorithm_version varchar(16) [not null, default: 'v1']
+
+  indexes {
+    (event_id, article_url) [pk]
+    (event_id, score) [name: 'idx_article_match_event_score', note: 'score DESC']
+  }
+}
+
+Table sync_run {
+  id bigserial [pk, increment]
+  provider varchar(32) [not null, note: "CHECK: provider IN ('eonet', 'rest_countries', 'newsapi')"]
+  started_at timestamptz [not null, default: `NOW()`]
+  ended_at timestamptz
+  outcome varchar(16) [not null, note: "CHECK: outcome IN ('success', 'partial', 'error', 'rate_limited')"]
+  records_processed integer [not null, default: 0]
+  error_class varchar(120)
+
+  indexes {
+    (provider, started_at) [name: 'idx_sync_run_provider_started', note: 'started_at DESC']
+  }
+}
+
+// ==============================================================================
+// Foreign Key Relationships
+// ==============================================================================
+Ref: observation.event_id > event.id [delete: cascade]
+Ref: event_country.event_id > event.id [delete: cascade]
+Ref: article_match.event_id > event.id [delete: cascade]
+Ref: article_match.article_url > article.canonical_url [delete: cascade]
+
+// Logical Relationships (uncomment if you want lines drawn in dbdiagram.io)
+// Ref: country_profile.iso_a3 - country_boundary.iso_a3
+// Ref: event_country.iso_a3 > country_boundary.iso_a3
+// Ref: event_country.iso_a3 > country_profile.iso_a3
