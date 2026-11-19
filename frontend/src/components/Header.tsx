@@ -54,12 +54,9 @@ export const Header: React.FC<HeaderProps> = React.memo(({
         </div>
         <div className="brand-copy">
           <h1 className="brand-title">
-            <span translate="no">EARTH EMDS</span> <span className="brand-divider" aria-hidden="true">//</span>{' '}
-            <span className="brand-subtitle">Earth Event &amp; Disaster Monitor</span>
+            <span translate="no">EARTH EMDS</span>
+            <span className="brand-subtitle">Earth Event Monitor</span>
           </h1>
-          <p className="brand-tagline">
-            NASA EONET v3 Telemetry · Natural Earth &amp; REST Countries v3.1 · Rule-Based NewsAPI v2
-          </p>
         </div>
       </div>
 
@@ -68,11 +65,11 @@ export const Header: React.FC<HeaderProps> = React.memo(({
         <div
           className={`freshness-pill ${isCachedFallback ? 'freshness-cached' : 'freshness-live'}`}
           data-testid="freshness-pill"
-          title="Last synchronized snapshot timestamp"
+          title="Last synchronized telemetry timestamp"
         >
           <span className="freshness-dot" aria-hidden="true" />
           <span className="freshness-status">
-            {isCachedFallback ? 'Cached Snapshot' : 'Live Telemetry'}
+            {isCachedFallback ? 'Cached' : 'Live'}
           </span>
           <span className="freshness-time mono-text" data-testid="last-updated-timestamp">
             {formatUtcTimestamp(lastUpdatedAt || health.last_updated_at)}
@@ -87,6 +84,7 @@ export const Header: React.FC<HeaderProps> = React.memo(({
           disabled={isSyncing}
           data-testid="sync-now-button"
           aria-label="Synchronize latest hazard telemetry now"
+          title="Sync latest telemetry"
         >
           <svg
             width="14"
@@ -105,35 +103,36 @@ export const Header: React.FC<HeaderProps> = React.memo(({
             <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
             <path d="M16 16h5v5" />
           </svg>
-          <span>{isSyncing ? 'Syncing…' : 'Sync Now'}</span>
+          <span>{isSyncing ? 'Syncing…' : 'Sync'}</span>
         </button>
 
         {/* 1-Click Lite Mode Toggle */}
         <button
           type="button"
-          className={`header-btn ${liteMode ? 'header-btn-active-amber' : 'header-btn-active-cyan'}`}
+          className={`header-btn ${liteMode ? 'header-btn-active-amber' : ''}`}
           onClick={onToggleLiteMode}
           aria-pressed={liteMode}
           data-testid="lite-mode-toggle"
-          title="Toggle between On-Demand 3D Globe and Zero-GPU 2D Tactical List Mode"
+          title="Switch between 3D Globe and low-power 2D List"
         >
-          <span className="mode-badge-dot" />
-          <span>{liteMode ? 'Lite Mode — GPU Off' : 'Lite Mode (2D List)'}</span>
+          <span className="mode-badge-dot" aria-hidden="true" />
+          <span>{liteMode ? 'Lite Mode — GPU Off' : '2D List'}</span>
         </button>
 
-        {/* Sound FX Mute / Unmute Toggle */}
+        {/* Sound FX Icon Toggle */}
         <button
           type="button"
-          className={`header-btn ${soundEnabled ? 'header-btn-sound-on' : 'header-btn-sound-off'}`}
+          className={`header-btn header-icon-btn ${soundEnabled ? 'header-btn-sound-on' : 'header-btn-sound-off'}`}
           onClick={onToggleSound}
           aria-pressed={soundEnabled}
           data-testid="sound-fx-toggle"
           aria-label={soundEnabled ? 'Mute Sound FX' : 'Unmute Sound FX'}
+          title={soundEnabled ? 'Sound FX: ON' : 'Sound FX: OFF'}
         >
           {soundEnabled ? (
             <svg
-              width="14"
-              height="14"
+              width="15"
+              height="15"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -148,8 +147,8 @@ export const Header: React.FC<HeaderProps> = React.memo(({
             </svg>
           ) : (
             <svg
-              width="14"
-              height="14"
+              width="15"
+              height="15"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -163,20 +162,22 @@ export const Header: React.FC<HeaderProps> = React.memo(({
               <line x1="17" y1="9" x2="23" y2="15" />
             </svg>
           )}
-          <span>{soundEnabled ? 'Sound FX: ON' : 'Sound FX: OFF'}</span>
+          <span className="sr-only">{soundEnabled ? 'Sound FX: ON' : 'Sound FX: OFF'}</span>
         </button>
 
         {/* Data Disclaimers Info Trigger */}
         <button
           type="button"
-          className={`header-btn ${showDisclaimersModal ? 'header-btn-active-cyan' : ''}`}
+          className={`header-btn header-icon-btn ${showDisclaimersModal ? 'header-btn-active-cyan' : ''}`}
           onClick={onToggleDisclaimersModal}
           aria-expanded={showDisclaimersModal}
+          aria-label="Data Disclaimers"
+          title="Data Disclaimers & Use Boundary"
           data-testid="disclaimers-trigger"
         >
           <svg
-            width="14"
-            height="14"
+            width="15"
+            height="15"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -189,7 +190,6 @@ export const Header: React.FC<HeaderProps> = React.memo(({
             <line x1="12" y1="16" x2="12" y2="12" />
             <line x1="12" y1="8" x2="12.01" y2="8" />
           </svg>
-          <span>Data Disclaimers</span>
         </button>
       </div>
     </header>

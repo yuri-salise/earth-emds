@@ -100,7 +100,7 @@ export const FilterBar: React.FC<FilterBarProps> = React.memo(({
             autoComplete="off"
             spellCheck={false}
             className="search-input"
-            placeholder="Search events, countries, or ISO codes (e.g. PHL, Mayon)…"
+            placeholder="Search events or countries…"
             aria-label="Search hazard events"
             data-testid="search-input"
             value={filters.q}
@@ -187,7 +187,7 @@ export const FilterBar: React.FC<FilterBarProps> = React.memo(({
                 data-testid={`status-filter-${st}`}
                 onClick={() => handleStatusClick(st)}
               >
-                {st === 'all' ? 'All Status' : st === 'open' ? 'Open' : 'Closed'}
+                {st === 'all' ? 'All' : st === 'open' ? 'Open' : 'Closed'}
               </button>
             );
           })}
@@ -196,7 +196,7 @@ export const FilterBar: React.FC<FilterBarProps> = React.memo(({
         {/* Date Range Inputs */}
         <div className="date-range-group">
           <label className="date-field-label" htmlFor="filter-start-date">
-            <span className="date-label-text">From</span>
+            <span className="sr-only">From</span>
             <input
               id="filter-start-date"
               name="start_date"
@@ -220,7 +220,7 @@ export const FilterBar: React.FC<FilterBarProps> = React.memo(({
             –
           </span>
           <label className="date-field-label" htmlFor="filter-end-date">
-            <span className="date-label-text">To</span>
+            <span className="sr-only">To</span>
             <input
               id="filter-end-date"
               name="end_date"
@@ -242,7 +242,7 @@ export const FilterBar: React.FC<FilterBarProps> = React.memo(({
           </label>
           {isDateRangeInvalid && (
             <span className="date-error-inline" role="alert" data-testid="date-range-error">
-              Start date must precede end date
+              Invalid range
             </span>
           )}
         </div>
@@ -257,11 +257,11 @@ export const FilterBar: React.FC<FilterBarProps> = React.memo(({
           data-testid="bbox-filter-toggle"
           title={
             liteMode
-              ? 'Switch to 3D Globe Mode to filter by current camera viewport bounding box'
-              : 'Filter events to the current 3D globe camera bounding box (bbox)'
+              ? 'Switch to 3D Globe Mode to filter by current camera viewport'
+              : 'Filter events visible in the current 3D globe viewport (bbox)'
           }
         >
-          <span>Filter by Globe Viewport</span>
+          <span>In View</span>
           {filters.useBbox && filters.bbox && (
             <span className="bbox-coords-chip mono-text">
               [{filters.bbox.map((v) => v.toFixed(0)).join(', ')}]
@@ -288,7 +288,7 @@ export const FilterBar: React.FC<FilterBarProps> = React.memo(({
               }}
               data-testid="reset-filters-button"
             >
-              Reset Filters
+              Reset
             </button>
           )}
         </div>

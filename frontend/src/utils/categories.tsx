@@ -209,10 +209,10 @@ export const CATEGORY_MAP: Record<string, CategoryMeta> = {
 export const FILTER_CATEGORIES: Array<{ id: string; label: string }> = [
   { id: 'all', label: 'All' },
   { id: 'wildfires', label: 'Wildfires' },
-  { id: 'severeStorms', label: 'Severe Storms' },
+  { id: 'severeStorms', label: 'Storms' },
   { id: 'volcanoes', label: 'Volcanoes' },
   { id: 'floods', label: 'Floods' },
-  { id: 'seaLakeIce', label: 'Sea & Lake Ice' },
+  { id: 'seaLakeIce', label: 'Sea Ice' },
 ];
 
 const CATEGORY_ALIAS_LOOKUP: Record<string, string> = {

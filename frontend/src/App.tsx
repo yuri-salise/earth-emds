@@ -199,6 +199,11 @@ export const App: React.FC = () => {
     return undefined;
   }, [filters, loadEventsAndHealth]);
 
+  // Keep browser tab title concise and contextual
+  useEffect(() => {
+    document.title = selectedEvent ? `${selectedEvent.title} · Earth EMDS` : 'Earth EMDS';
+  }, [selectedEvent]);
+
   // Cleanup active fetches on unmount
   useEffect(() => {
     return () => {
@@ -421,36 +426,49 @@ export const App: React.FC = () => {
         />
       </main>
 
-      {/* Persistent Use-Boundary & Mandatory Uncertainty Disclaimers Footer */}
+      {/* Compact Use-Boundary & Mandatory Uncertainty Caveats Footer */}
       <footer
         className="uncertainty-footer"
         role="contentinfo"
         data-testid="persistent-uncertainty-footer"
       >
-        <div className="footer-boundary-pill">
-          <strong>Educational &amp; Informational Use Boundary:</strong> Not an emergency alerting,
-          disaster prediction, casualty estimation, or evacuation routing service.
-        </div>
+        <span className="footer-boundary-pill">
+          Informational only — not for emergency use
+        </span>
         <div className="footer-caveats-row">
-          <span data-testid="footer-caveat-geometry">
-            <strong>1. Satellite Geometry Caveat:</strong> NASA EONET v3 coordinates/perimeters are
-            approximate satellite observations with potential reporting delays.
-          </span>
+          <button
+            type="button"
+            className="footer-caveat-link"
+            onClick={handleToggleDisclaimersModal}
+            data-testid="footer-caveat-geometry"
+            title="Event coordinates and perimeters from NASA EONET v3 are approximate satellite observations."
+          >
+            Satellite Geometry Caveat
+          </button>
           <span className="footer-sep" aria-hidden="true">
             ·
           </span>
-          <span data-testid="footer-caveat-density">
-            <strong>2. National Population Density Caveat:</strong> REST Countries v3.1 density is a
-            national macro-level average (Population ÷ Land Area in km²), not local disaster-zone
-            exposure.
-          </span>
+          <button
+            type="button"
+            className="footer-caveat-link"
+            onClick={handleToggleDisclaimersModal}
+            data-testid="footer-caveat-density"
+            title="REST Countries v3.1 density is a national macro-level average, not local disaster-zone exposure."
+          >
+            National Population Density Caveat
+          </button>
           <span className="footer-sep" aria-hidden="true">
             ·
           </span>
-          <span data-testid="footer-caveat-news">
-            <strong>3. Contextual News Matching Caveat:</strong> NewsAPI v2 articles are matched by
-            keywords, country names, and dates—not verified GPS coordinates.
-          </span>
+          <button
+            type="button"
+            className="footer-caveat-link"
+            onClick={handleToggleDisclaimersModal}
+            data-testid="footer-caveat-news"
+            title="NewsAPI v2 articles are matched contextually by keywords, country names, and dates—not GPS coordinates."
+          >
+            Contextual News Matching Caveat
+          </button>
         </div>
       </footer>
     </div>

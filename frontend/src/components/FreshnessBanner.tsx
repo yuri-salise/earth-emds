@@ -52,17 +52,16 @@ export const FreshnessBanner: React.FC<FreshnessBannerProps> = React.memo(({
           <div className="degraded-banner-left">
             <span className="degraded-badge">Cached Snapshot</span>
             <span>
-              Serving verified cached telemetry snapshot (Last successful sync:{' '}
-              <strong className="mono-text">{formatUtcTimestamp(health.last_updated_at)}</strong>).
-              Upstream delays or rate limits do not interrupt exploration.
+              Last sync{' '}
+              <strong className="mono-text">{formatUtcTimestamp(health.last_updated_at)}</strong>
             </span>
           </div>
           <div className="degraded-providers mono-text">
             <span>EONET: {health.providers?.eonet?.outcome || 'cached'}</span>
             <span aria-hidden="true">·</span>
-            <span>REST Countries: {health.providers?.rest_countries?.outcome || 'cached'}</span>
+            <span>Countries: {health.providers?.rest_countries?.outcome || 'cached'}</span>
             <span aria-hidden="true">·</span>
-            <span>NewsAPI: {health.providers?.newsapi?.outcome || 'cached'}</span>
+            <span>News: {health.providers?.newsapi?.outcome || 'cached'}</span>
           </div>
         </div>
       )}
@@ -83,9 +82,8 @@ export const FreshnessBanner: React.FC<FreshnessBannerProps> = React.memo(({
           <div className="disclaimers-modal-card">
             <div className="disclaimers-modal-header">
               <div>
-                <span className="modal-kicker mono-text">Transparency &amp; Use Boundary</span>
                 <h2 id="disclaimers-modal-title" className="modal-title">
-                  Scientific, Demographic &amp; News Uncertainty Disclaimers
+                  Data Disclaimers &amp; Use Boundary
                 </h2>
               </div>
               <button
