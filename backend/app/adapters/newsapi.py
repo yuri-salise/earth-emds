@@ -1,4 +1,6 @@
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
+import html
 import os
 import re
 from urllib.parse import quote_plus
@@ -177,6 +179,18 @@ def _build_curated_fallback_articles(
     ]
 
 
+def _parse_rss_pubdate(raw_pubdate: str | None) -> str | None:
+    if not raw_pubdate or not raw_pubdate.strip():
+        return None
+    try:
+        dt = parsedate_to_datetime(raw_pubdate.strip())
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    except (TypeError, ValueError):
+        return None
+
+
 async def _fetch_google_news_rss(query: str) -> list[dict]:
     """Free keyless Google News RSS fallback."""
     rss_url = f"https://news.google.com/rss/search?q={quote_plus(query)}&hl=en-US&gl=US&ceid=US:en"
@@ -190,12 +204,13 @@ async def _fetch_google_news_rss(query: str) -> list[dict]:
         root = ET.fromstring(resp.text)
         items: list[dict] = []
         for item in root.findall("./channel/item")[:10]:
-            title = (item.findtext("title") or "").strip()
+            title = html.unescape((item.findtext("title") or "").strip())
             link = (item.findtext("link") or "").strip()
-            desc = (item.findtext("description") or "").strip()
+            desc = html.unescape((item.findtext("description") or "").strip())
+            pub_iso = _parse_rss_pubdate(item.findtext("pubDate"))
             source_el = item.find("source")
             publisher = (
-                source_el.text.strip()
+                html.unescape(source_el.text.strip())
                 if source_el is not None and source_el.text
                 else "Google News"
             )
@@ -203,10 +218,10 @@ async def _fetch_google_news_rss(query: str) -> list[dict]:
                 items.append(
                     {
                         "title": title,
-                        "description": re.sub(r"<[^>]+>", " ", desc).strip(),
+                        "description": re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", desc)).strip(),
                         "url": link,
                         "publisher": publisher,
-                        "published_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                        "published_at": pub_iso,
                     }
                 )
         return items

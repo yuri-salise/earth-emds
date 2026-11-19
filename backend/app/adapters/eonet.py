@@ -29,7 +29,7 @@ CATEGORY_MAP = {
 
 def _normalize_category(categories: list[dict] | None) -> str:
     if not categories:
-        return "Severe Storms"
+        return "Uncategorized"
     first = categories[0] if isinstance(categories[0], dict) else {}
     cid = (first.get("id") or "").strip().lower()
     clean_id = "".join(ch for ch in cid if ch.isalnum())
@@ -41,7 +41,7 @@ def _normalize_category(categories: list[dict] | None) -> str:
     clean_title = "".join(ch for ch in title.lower() if ch.isalnum())
     if clean_title in CATEGORY_MAP:
         return CATEGORY_MAP[clean_title]
-    return title or "Severe Storms"
+    return title or "Uncategorized"
 
 
 def parse_eonet_event(raw: dict) -> dict:
@@ -684,16 +684,20 @@ async def fetch_eonet_events(
             timeout=httpx.Timeout(6.0, connect=3.0),
             headers={"Accept": "application/json", "User-Agent": "earth-emds/1.0"},
         ) as client:
-            open_raw = await _fetch_eonet_endpoint(
-                client, base_url, {"status": "open", "limit": 60}
-            )
-            closed_raw: list[dict] = []
             if include_closed:
-                closed_raw = await _fetch_eonet_endpoint(
-                    client,
-                    base_url,
-                    {"status": "closed", "limit": min(settings.eonet_closed_limit, 40)},
+                open_raw, closed_raw = await asyncio.gather(
+                    _fetch_eonet_endpoint(client, base_url, {"status": "open", "limit": 60}),
+                    _fetch_eonet_endpoint(
+                        client,
+                        base_url,
+                        {"status": "closed", "limit": min(settings.eonet_closed_limit, 40)},
+                    ),
                 )
+            else:
+                open_raw = await _fetch_eonet_endpoint(
+                    client, base_url, {"status": "open", "limit": 60}
+                )
+                closed_raw = []
             for raw_item in open_raw + closed_raw:
                 try:
                     parsed = parse_eonet_event(raw_item)

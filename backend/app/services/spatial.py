@@ -78,14 +78,15 @@ def _point_to_segment_distance_km(
     x2: float,
     y2: float,
 ) -> float:
-    dx = x2 - x1
+    cos_lat = max(0.05, math.cos(math.radians(py)))
+    dx = (x2 - x1) * cos_lat
     dy = y2 - y1
     if dx == 0.0 and dy == 0.0:
         return _haversine_km(px, py, x1, y1)
-    t = ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy)
+    t = (((px - x1) * cos_lat) * dx + (py - y1) * dy) / (dx * dx + dy * dy)
     t = max(0.0, min(1.0, t))
-    proj_x = x1 + t * dx
-    proj_y = y1 + t * dy
+    proj_x = x1 + t * (x2 - x1)
+    proj_y = y1 + t * (y2 - y1)
     return _haversine_km(px, py, proj_x, proj_y)
 
 
@@ -152,12 +153,11 @@ def resolve_event_countries(
             if iso3 == "-99":
                 continue
             bbox = country["bbox"]
-            # Fast bounding-box pre-filter with 1.5 degree buffer (~165 km)
             if (
-                pt_lon < bbox[0] - 1.5
-                or pt_lon > bbox[2] + 1.5
-                or pt_lat < bbox[1] - 1.5
-                or pt_lat > bbox[3] + 1.5
+                pt_lon < bbox[0]
+                or pt_lon > bbox[2]
+                or pt_lat < bbox[1]
+                or pt_lat > bbox[3]
             ):
                 continue
 
@@ -178,7 +178,9 @@ def resolve_event_countries(
             }
             continue
 
-        # Offshore fallback: check coastal proximity <= 100 km
+        # Offshore fallback: check coastal proximity <= coastal_buffer_km with latitude-adjusted lon padding
+        lat_buf = coastal_buffer_km / 111.0 + 0.1
+        lon_buf = min(180.0, lat_buf / max(0.05, math.cos(math.radians(pt_lat))))
         best_coastal: tuple[float, dict] | None = None
         for country in boundaries:
             iso3 = country["iso_a3"]
@@ -186,22 +188,28 @@ def resolve_event_countries(
                 continue
             bbox = country["bbox"]
             if (
-                pt_lon < bbox[0] - 1.5
-                or pt_lon > bbox[2] + 1.5
-                or pt_lat < bbox[1] - 1.5
-                or pt_lat > bbox[3] + 1.5
+                pt_lon < bbox[0] - lon_buf
+                or pt_lon > bbox[2] + lon_buf
+                or pt_lat < bbox[1] - lat_buf
+                or pt_lat > bbox[3] + lat_buf
             ):
                 continue
             min_dist = float("inf")
             for ring in country["polygons"]:
-                for idx in range(len(ring) - 1):
+                ring_len = len(ring)
+                if ring_len < 2:
+                    continue
+                is_closed = ring[0][0] == ring[-1][0] and ring[0][1] == ring[-1][1]
+                edge_count = ring_len - 1 if is_closed else ring_len
+                for idx in range(edge_count):
+                    nxt = (idx + 1) % ring_len
                     d = _point_to_segment_distance_km(
                         pt_lon,
                         pt_lat,
                         ring[idx][0],
                         ring[idx][1],
-                        ring[idx + 1][0],
-                        ring[idx + 1][1],
+                        ring[nxt][0],
+                        ring[nxt][1],
                     )
                     if d < min_dist:
                         min_dist = d

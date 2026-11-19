@@ -28,6 +28,32 @@ HAZARD_KEYWORDS: tuple[str, ...] = (
     "drought",
 )
 
+CATEGORY_HAZARD_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "wildfires": ("wildfire", "wildfires", "fire", "blaze", "bushfire", "brushfire", "burn"),
+    "severestorms": ("storm", "storms", "typhoon", "hurricane", "cyclone", "tropical", "tornado", "monsoon", "gale"),
+    "volcanoes": ("volcano", "volcanic", "eruption", "ash", "lava", "crater", "pyroclastic", "magma", "seismic"),
+    "floods": ("flood", "flooding", "floods", "inundation", "deluge", "monsoon", "river", "overflow"),
+    "sealakeice": ("ice", "iceberg", "sea ice", "glacier", "cryosphere", "freeze", "pack ice"),
+    "seaandlakeice": ("ice", "iceberg", "sea ice", "glacier", "cryosphere", "freeze", "pack ice"),
+    "earthquakes": ("earthquake", "quake", "seismic", "tremor", "fault", "aftershock", "tsunami"),
+    "landslides": ("landslide", "mudslide", "rockslide", "debris", "avalanche"),
+    "drought": ("drought", "arid", "water shortage", "dry"),
+    "dusthaze": ("dust", "haze", "sandstorm", "smoke", "air quality"),
+    "tempextremes": ("heatwave", "heat", "cold snap", "freeze", "temperature"),
+}
+
+_KEYWORD_PATTERNS: dict[str, re.Pattern[str]] = {
+    kw: re.compile(rf"\b{re.escape(kw)}\b")
+    for kw in (*HAZARD_KEYWORDS, *(k for kws in CATEGORY_HAZARD_KEYWORDS.values() for k in kws))
+}
+
+
+def _keywords_for_category(event_category: str) -> tuple[str, ...]:
+    clean_cat = re.sub(r"[^a-z0-9]", "", (event_category or "").lower())
+    if clean_cat in CATEGORY_HAZARD_KEYWORDS:
+        return CATEGORY_HAZARD_KEYWORDS[clean_cat]
+    return HAZARD_KEYWORDS
+
 GENERIC_TITLE_STOPWORDS = frozenset(
     {
         "the",
@@ -84,12 +110,13 @@ def _extract_distinct_title_phrases(
     country_lower = {c.lower() for c in (country_names or [])}
     words = re.findall(r"[A-Za-z][A-Za-z0-9'-]{2,}", event_title or "")
     distinct: list[str] = []
+    seen_lower: set[str] = set()
     for w in words:
         wl = w.lower()
-        if wl in GENERIC_TITLE_STOPWORDS or wl in country_lower:
+        if wl in GENERIC_TITLE_STOPWORDS or wl in country_lower or wl in seen_lower:
             continue
-        if w not in distinct:
-            distinct.append(w)
+        seen_lower.add(wl)
+        distinct.append(w)
     return distinct
 
 
@@ -160,9 +187,11 @@ def score_candidate_article(
             match_reasons.append(f"Matched event title phrase '{phrase}' (+35)")
             break
 
-    # 2. +25 pts if hazard category keyword appears in title or description
-    for kw in HAZARD_KEYWORDS:
-        if re.search(rf"\b{re.escape(kw)}\b", combined_lower):
+    # 2. +25 pts if hazard category keyword matching this event's category appears in title or description
+    for kw in _keywords_for_category(event_category):
+        pattern = _KEYWORD_PATTERNS.get(kw)
+        matched = bool(pattern.search(combined_lower)) if pattern else bool(re.search(rf"\b{re.escape(kw)}\b", combined_lower))
+        if matched:
             score += 25
             match_reasons.append(f"Matched hazard category keyword '{kw}' (+25)")
             break
