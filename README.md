@@ -308,11 +308,14 @@ earth-emds/
 │   ├── Dockerfile
 │   ├── nginx.conf
 │   └── package.json
+├── docs/                      # Local documentation (gitignored)
+│   ├── sia/                   # SIA documentation (.md, .pdf, .html, generator)
+│   ├── specs/                 # product.md, implementation.md
+│   ├── system-integration/    # System Integration .docx + figures
+│   ├── samples/               # Sample documentation photos
+│   └── source/                # Laboratory .docx build scripts
 ├── docker-compose.yml
 ├── .env.example
-├── product.md                 # Product specification & FR/NFR matrix
-├── implementation.md          # Engineering implementation plan
-├── SIA_DOCUMENTATION.md       # Systems Integration & Architecture documentation
 └── README.md
 ```
 

@@ -35,3 +35,6 @@ frontend/test-results/
 Thumbs.db
 .vscode/
 .idea/
+
+# Local documentation (SIA, specs, lab deliverables, samples)
+docs/
